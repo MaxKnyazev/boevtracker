@@ -1,0 +1,11 @@
+-- First admin is created manually after schema is applied.
+-- Example (password: admin123):
+-- INSERT INTO users (username, password_hash, role, created_at, updated_at)
+-- VALUES (
+--   'admin',
+--   '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy',
+--   'ADMIN',
+--   NOW(),
+--   NOW()
+-- );
+SELECT 1;

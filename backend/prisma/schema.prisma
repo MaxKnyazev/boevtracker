@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  DEVELOPER
+  READER
+  PENDING
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  username     String    @unique @db.VarChar(64)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  firstName    String    @default("") @map("first_name") @db.VarChar(64)
+  lastName     String    @default("") @map("last_name") @db.VarChar(64)
+  avatarColor  String    @default("#3B82F6") @map("avatar_color") @db.VarChar(7)
+  role         Role      @default(PENDING)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  assignedTasks Task[]     @relation("TaskAssignee")
+  comments      Comment[]
+  createdTasks  Task[]     @relation("TaskCreator")
+  boards        Board[]    @relation("BoardCreator")
+  projects      Project[]  @relation("ProjectCreator")
+
+  @@map("users")
+}
+
+model Board {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(255)
+  createdById Int      @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  createdBy User      @relation("BoardCreator", fields: [createdById], references: [id])
+  projects  Project[]
+
+  @@map("boards")
+}
+
+model Project {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(255)
+  boardId     Int      @map("board_id")
+  createdById Int      @map("created_by_id")
+  order       Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  board     Board          @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  createdBy User           @relation("ProjectCreator", fields: [createdById], references: [id])
+  statuses  ProjectStatus[]
+  tasks     Task[]
+
+  @@index([boardId, order])
+  @@map("projects")
+}
+
+model ProjectStatus {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(128)
+  order     Int      @default(0)
+  projectId Int      @map("project_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@unique([projectId, name])
+  @@map("project_statuses")
+}
+
+model Task {
+  id              Int       @id @default(autoincrement())
+  title           String    @db.VarChar(255)
+  description     String?   @db.Text
+  priority        Priority  @default(MEDIUM)
+  deadline        DateTime? @db.DateTime(0)
+  projectId       Int       @map("project_id")
+  statusId        Int       @map("status_id")
+  assigneeId      Int?      @map("assignee_id")
+  createdById     Int       @map("created_by_id")
+  order           Int       @default(0) @map("sort_order")
+  statusChangedAt DateTime  @default(now()) @map("status_changed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status    ProjectStatus @relation(fields: [statusId], references: [id])
+  assignee  User?         @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdBy User          @relation("TaskCreator", fields: [createdById], references: [id])
+  comments  Comment[]
+  files     Attachment[]  @relation("TaskFiles")
+
+  @@index([statusId, order])
+  @@map("tasks")
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  body      String   @db.Text
+  taskId    Int      @map("task_id")
+  authorId  Int      @map("author_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  task    Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author  User         @relation(fields: [authorId], references: [id])
+  files   Attachment[] @relation("CommentFiles")
+
+  @@map("comments")
+}
+
+model Attachment {
+  id           Int      @id @default(autoincrement())
+  filename     String   @db.VarChar(255)
+  originalName String   @map("original_name") @db.VarChar(255)
+  mimeType     String   @map("mime_type") @db.VarChar(128)
+  size         Int
+  key          String   @db.VarChar(512)
+  url          String   @db.VarChar(1024)
+  taskId       Int?     @map("task_id")
+  commentId    Int?     @map("comment_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  task    Task?    @relation("TaskFiles", fields: [taskId], references: [id], onDelete: Cascade)
+  comment Comment? @relation("CommentFiles", fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}

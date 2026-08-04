@@ -1,0 +1,20 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy backend:3001
+	}
+
+	handle /files/* {
+		uri strip_prefix /files
+		reverse_proxy minio:9000
+	}
+
+	handle {
+		reverse_proxy frontend:80
+	}
+}
