@@ -295,7 +295,7 @@ export function TaskModal({
             }
           }}
         >
-        <div className="max-h-[90vh] overflow-y-auto p-6">
+        <div className="max-h-[90vh] overflow-y-auto p-6 [scrollbar-gutter:stable]">
           <DialogHeader>
             <DialogTitle className="sr-only">{task.title}</DialogTitle>
             <div className="flex min-h-11 items-start gap-2 pr-8">
@@ -400,13 +400,13 @@ export function TaskModal({
                     )}
                 </div>
 
-                <div className="h-[128px]">
+                <div className="min-h-[192px]">
                   {writable && editingDescription ? (
-                    <div className="flex h-full gap-2">
+                    <div className="flex gap-2">
                       <Textarea
                         value={descriptionDraft}
                         onChange={(e) => setDescriptionDraft(e.target.value)}
-                        className="h-full flex-1 resize-none"
+                        className="min-h-[192px] flex-1 resize-y"
                         autoFocus
                         onKeyDown={(e) => {
                           if (e.key === 'Escape') setEditingDescription(false);
@@ -443,13 +443,13 @@ export function TaskModal({
                       </div>
                     </div>
                   ) : task.description?.trim() ? (
-                    <div className="h-full overflow-y-auto rounded-md border border-transparent px-1 py-0.5 text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                    <div className="min-h-[192px] px-1 py-0.5 text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
                       {task.description}
                     </div>
                   ) : writable ? (
                     <button
                       type="button"
-                      className="flex h-full w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent/30 hover:text-foreground"
+                      className="flex min-h-[192px] w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent/30 hover:text-foreground"
                       onClick={() => {
                         setDescriptionDraft('');
                         setEditingDescription(true);
@@ -459,7 +459,7 @@ export function TaskModal({
                       Добавить описание
                     </button>
                   ) : (
-                    <div className="flex h-full items-center text-sm text-muted-foreground">
+                    <div className="flex min-h-[192px] items-center text-sm text-muted-foreground">
                       Без описания
                     </div>
                   )}
