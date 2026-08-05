@@ -15,6 +15,7 @@ import { execSync } from 'node:child_process';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const api = join(root, 'api');
 const out = join(root, 'dist-deploy');
+const frontendDist = join(root, 'frontend', 'dist');
 const includeVendor = process.env.INCLUDE_VENDOR === '1';
 
 function wipe(dir) {
@@ -34,9 +35,20 @@ function copyDir(src, dest, { skip = [] } = {}) {
   }
 }
 
+function copySpaInto(destDir) {
+  mkdirSync(destDir, { recursive: true });
+  for (const name of readdirSync(frontendDist)) {
+    cpSync(join(frontendDist, name), join(destDir, name), { recursive: true });
+  }
+}
+
 console.log('Building frontend...');
 execSync('npm ci --prefix frontend', { cwd: root, stdio: 'inherit' });
 execSync('npm run build --prefix frontend', { cwd: root, stdio: 'inherit' });
+
+if (!existsSync(join(frontendDist, 'index.html'))) {
+  throw new Error('frontend/dist/index.html missing after build');
+}
 
 if (includeVendor) {
   console.log('Installing PHP deps (no-dev) for vendor bundle...');
@@ -69,26 +81,21 @@ writeFileSync(
   readFileSync(join(root, 'deploy/shared/app_laravel.htaccess')),
 );
 
-const publicSrc = join(api, 'public');
-for (const name of readdirSync(publicSrc)) {
-  if (name === 'index.php') continue;
-  const from = join(publicSrc, name);
-  const to = join(out, name);
-  const st = statSync(from);
-  if (st.isDirectory()) copyDir(from, to);
-  else cpSync(from, to);
+// Fresh SPA → site root (not stale api/public from git)
+copySpaInto(out);
+
+// Keep hosting helpers from api/public if present
+for (const name of ['.htaccess', '.user.ini']) {
+  const from = join(api, 'public', name);
+  if (existsSync(from)) cpSync(from, join(out, name));
 }
 
 cpSync(join(root, 'deploy/shared/index.php'), join(out, 'index.php'));
 
-const spaHtml = join(publicSrc, 'index.html');
-const spaAssets = join(publicSrc, 'assets');
-if (existsSync(spaHtml)) {
-  cpSync(spaHtml, join(laravel, 'public', 'index.html'));
-}
-if (existsSync(spaAssets)) {
-  copyDir(spaAssets, join(laravel, 'public', 'assets'));
-}
+// Fresh SPA → Laravel public (keep index.php)
+const laravelPublic = join(laravel, 'public');
+mkdirSync(laravelPublic, { recursive: true });
+copySpaInto(laravelPublic);
 
 const uploads = join(laravel, 'storage/app/uploads');
 mkdirSync(uploads, { recursive: true });

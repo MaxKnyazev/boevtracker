@@ -54,9 +54,10 @@ www/boevsoft.ru/
 
 При **push в `main`** (или вручную **Actions → Deploy → Run workflow**):
 
-1. Собирает frontend (`VITE_API_URL` пустой = same-origin)
-2. Собирает пакет `dist-deploy/` (корень сайта + `app_laravel` **без** `vendor`)
-3. Заливает по FTP
+1. Собирает frontend в `frontend/dist` (`VITE_API_URL` пустой = same-origin)
+2. Кладёт **свежий** SPA в пакет (не старый `api/public` из git)
+3. Собирает `dist-deploy/` (корень сайта + `app_laravel` **без** `vendor`)
+4. Заливает по FTP
 
 Обычный деплой занимает **несколько минут**, не десятки.
 
