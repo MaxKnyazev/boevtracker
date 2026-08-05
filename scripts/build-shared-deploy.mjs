@@ -15,6 +15,7 @@ import { execSync } from 'node:child_process';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const api = join(root, 'api');
 const out = join(root, 'dist-deploy');
+const includeVendor = process.env.INCLUDE_VENDOR === '1';
 
 function wipe(dir) {
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
@@ -37,26 +38,31 @@ console.log('Building frontend...');
 execSync('npm ci --prefix frontend', { cwd: root, stdio: 'inherit' });
 execSync('npm run build --prefix frontend', { cwd: root, stdio: 'inherit' });
 
-console.log('Installing PHP deps (no-dev)...');
-execSync('composer install --no-dev --optimize-autoloader --no-interaction', {
-  cwd: api,
-  stdio: 'inherit',
-});
+if (includeVendor) {
+  console.log('Installing PHP deps (no-dev) for vendor bundle...');
+  execSync('composer install --no-dev --optimize-autoloader --no-interaction', {
+    cwd: api,
+    stdio: 'inherit',
+  });
+} else {
+  console.log('Skipping vendor pack (use INCLUDE_VENDOR=1 for full vendor upload).');
+}
 
 console.log('Assembling dist-deploy...');
 wipe(out);
 
 const laravel = join(out, 'app_laravel');
-copyDir(api, laravel, {
-  skip: [
-    '.env',
-    '.env.backup',
-    'node_modules',
-    'tests',
-    '.phpunit.result.cache',
-    'phpunit.xml',
-  ],
-});
+const skip = [
+  '.env',
+  '.env.backup',
+  'node_modules',
+  'tests',
+  '.phpunit.result.cache',
+  'phpunit.xml',
+];
+if (!includeVendor) skip.push('vendor');
+
+copyDir(api, laravel, { skip });
 
 writeFileSync(
   join(laravel, '.htaccess'),
@@ -89,4 +95,8 @@ mkdirSync(uploads, { recursive: true });
 writeFileSync(join(uploads, '.gitignore'), "*\n!.gitignore\n");
 
 console.log('Ready:', out);
-console.log('Upload this folder contents to the site root (www/boevsoft.ru/).');
+console.log(
+  includeVendor
+    ? 'Package includes vendor/ (slow FTP).'
+    : 'Package excludes vendor/ (fast FTP; keep vendor on server).',
+);

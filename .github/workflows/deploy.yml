@@ -4,16 +4,21 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      include_vendor:
+        description: "Also upload app_laravel/vendor (slow, only when composer.lock changed)"
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-shared
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
     name: Build and FTP deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -24,6 +29,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - uses: shivammathur/setup-php@v2
+        if: ${{ github.event.inputs.include_vendor == 'true' }}
         with:
           php-version: "8.2"
           extensions: mbstring, pdo_mysql, tokenizer, xml, ctype, json, bcmath, fileinfo
@@ -31,9 +37,12 @@ jobs:
           tools: composer:v2
 
       - name: Build shared-hosting package
+        env:
+          INCLUDE_VENDOR: ${{ github.event.inputs.include_vendor == 'true' && '1' || '0' }}
         run: node scripts/build-shared-deploy.mjs
 
-      - name: Deploy via FTP
+      - name: Deploy via FTP (app only)
+        if: ${{ github.event.inputs.include_vendor != 'true' }}
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_HOST }}
@@ -41,7 +50,30 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./dist-deploy/
           server-dir: ${{ secrets.FTP_SERVER_DIR }}
-          timeout: 600000
+          timeout: 1800000
+          exclude: |
+            **/.env
+            **/.env.*
+            **/node_modules/**
+            **/.git*
+            **/vendor/**
+            **/storage/logs/**
+            **/storage/framework/cache/data/**
+            **/storage/framework/sessions/**
+            **/storage/framework/views/**
+            **/storage/app/uploads/**
+            !**/storage/app/uploads/.gitignore
+
+      - name: Deploy via FTP (with vendor)
+        if: ${{ github.event.inputs.include_vendor == 'true' }}
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist-deploy/
+          server-dir: ${{ secrets.FTP_SERVER_DIR }}
+          timeout: 1800000
           exclude: |
             **/.env
             **/.env.*

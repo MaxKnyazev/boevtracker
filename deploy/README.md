@@ -55,13 +55,24 @@ www/boevsoft.ru/
 При **push в `main`** (или вручную **Actions → Deploy → Run workflow**):
 
 1. Собирает frontend (`VITE_API_URL` пустой = same-origin)
-2. `composer install --no-dev` в `api/`
-3. Собирает пакет `dist-deploy/` (корень + `app_laravel`)
-4. Заливает по FTP
+2. Собирает пакет `dist-deploy/` (корень сайта + `app_laravel` **без** `vendor`)
+3. Заливает по FTP
+
+Обычный деплой занимает **несколько минут**, не десятки.
+
+**`vendor/` по FTP не заливается** — он уже на сервере после первой ручной установки.  
+Если обновили PHP-зависимости (`composer.lock`), в Actions → **Run workflow** включите  
+**Also upload app_laravel/vendor** (медленно) **или** на сервере по SSH:
+
+```bash
+cd ~/www/boevsoft.ru/app_laravel
+composer install --no-dev --optimize-autoloader
+```
 
 **Не затирает на сервере:**
 
 - `app_laravel/.env`
+- `app_laravel/vendor/` (при обычном деплое)
 - загруженные файлы в `storage/app/uploads`
 
 ## 4. Первый запуск автодеплоя
@@ -87,6 +98,8 @@ php artisan route:clear
 
 ```bash
 node scripts/build-shared-deploy.mjs
+# полный пакет с vendor (редко):
+# INCLUDE_VENDOR=1 node scripts/build-shared-deploy.mjs
 ```
 
 Результат: папка `dist-deploy/` — её содержимое можно залить вручную в корень сайта.
