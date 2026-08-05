@@ -20,10 +20,10 @@ const DESC_LIMIT = 90;
 const PICKER_WIDTH = 208; // w-52
 
 const priorityColor: Record<string, string> = {
-  LOW: 'border-slate-500/40 text-slate-300',
-  MEDIUM: 'border-blue-500/40 text-blue-300',
-  HIGH: 'border-amber-500/40 text-amber-300',
-  CRITICAL: 'border-red-500/40 text-red-300',
+  LOW: 'border-slate-500/40 text-slate-600 dark:text-slate-300',
+  MEDIUM: 'border-blue-500/40 text-blue-700 dark:text-blue-300',
+  HIGH: 'border-amber-500/40 text-amber-700 dark:text-amber-300',
+  CRITICAL: 'border-red-500/40 text-red-700 dark:text-red-300',
 };
 
 function truncate(text?: string | null, limit = DESC_LIMIT): string {

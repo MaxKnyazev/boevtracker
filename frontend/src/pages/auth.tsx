@@ -4,6 +4,7 @@ import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -208,7 +209,10 @@ function AuthShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
+    <div className="relative flex min-h-screen items-center justify-center p-6">
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md rounded-2xl border border-border bg-card/80 p-8 shadow-xl backdrop-blur">
         <div className="mb-6 text-center">
           <div className="text-2xl font-bold text-primary">BoevTracker</div>

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore, canManageUsers } from '@/store/auth';
 import { Button } from '@/components/ui/button';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { ROLE_LABELS, cn } from '@/lib/utils';
 import { UserAvatar, displayName } from '@/components/user-avatar';
 
@@ -115,6 +116,7 @@ export function AppLayout() {
           {collapsed ? (
             <div className="flex flex-col items-center gap-2">
               <UserAvatar user={user} size="md" title={displayName(user)} />
+              <ThemeToggle />
               <Button
                 variant="outline"
                 size="icon"
@@ -129,7 +131,7 @@ export function AppLayout() {
             <>
               <div className="mb-3 flex items-center gap-2">
                 <UserAvatar user={user} size="md" />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">
                     {displayName(user)}
                   </div>
@@ -137,6 +139,7 @@ export function AppLayout() {
                     {user ? ROLE_LABELS[user.role] : ''}
                   </div>
                 </div>
+                <ThemeToggle />
               </div>
               <Button variant="outline" className="w-full" onClick={onLogout}>
                 <LogOut className="h-4 w-4" />
