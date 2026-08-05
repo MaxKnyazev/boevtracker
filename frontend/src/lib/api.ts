@@ -1,10 +1,5 @@
-/** Empty string = same-origin (production behind Caddy). */
-const API_URL =
-  import.meta.env.VITE_API_URL !== undefined
-    ? String(import.meta.env.VITE_API_URL)
-    : import.meta.env.DEV
-      ? 'http://localhost:3001'
-      : '';
+/** Same-origin by default. Set VITE_API_URL only if API is on another host. */
+const API_URL = String(import.meta.env.VITE_API_URL ?? '').trim();
 
 export type Role = 'ADMIN' | 'DEVELOPER' | 'READER' | 'PENDING';
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';

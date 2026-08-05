@@ -1,32 +1,55 @@
-name: Deploy
+name: Deploy to shared hosting
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
-  group: deploy-production
+  group: deploy-shared
   cancel-in-progress: true
 
 jobs:
   deploy:
-    name: Deploy to VPS
+    name: Build and FTP deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.2.0
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          script_stop: true
-          command_timeout: 25m
-          script: |
-            set -euo pipefail
-            cd /opt/boevtracker
-            git fetch origin main
-            git reset --hard origin/main
-            docker compose -f docker-compose.prod.yml --env-file .env up -d --build --remove-orphans
-            docker image prune -f
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: mbstring, pdo_mysql, tokenizer, xml, ctype, json, bcmath, fileinfo
+          coverage: none
+          tools: composer:v2
+
+      - name: Build shared-hosting package
+        run: node scripts/build-shared-deploy.mjs
+
+      - name: Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist-deploy/
+          server-dir: ${{ secrets.FTP_SERVER_DIR }}
+          timeout: 600000
+          exclude: |
+            **/.env
+            **/.env.*
+            **/node_modules/**
+            **/.git*
+            **/storage/logs/**
+            **/storage/framework/cache/data/**
+            **/storage/framework/sessions/**
+            **/storage/framework/views/**
+            **/storage/app/uploads/**
+            !**/storage/app/uploads/.gitignore

@@ -1,137 +1,101 @@
-# Деплой BoevTracker на VPS (REG.RU)
+# Автодеплой BoevTracker на REG.RU (shared / ISPmanager)
 
-## Требования
+Сайт: `boevsoft.ru`  
+Раскладка на сервере:
 
-- VPS/VDS Ubuntu 22.04 или 24.04 (не shared-хостинг)
-- Рекомендуется от 2 GB RAM (лучше 4 GB)
-- Домен с A-записью на IP сервера
-- Репозиторий на GitHub
-
-## 1. Первичная настройка сервера
-
-С root-доступом:
-
-```bash
-# скопируйте скрипт на сервер или клонируйте репо временно
-curl -fsSL https://raw.githubusercontent.com/ORG/boevtracker/main/deploy/bootstrap-vps.sh -o bootstrap-vps.sh
-# либо после clone:
-# bash deploy/bootstrap-vps.sh
-
-REPO_URL=git@github.com:ORG/boevtracker.git bash bootstrap-vps.sh
+```text
+/www/boevsoft.ru/          ← корень сайта (FTP_SERVER_DIR)
+  index.php                ← вход в Laravel (app_laravel)
+  index.html + assets/     ← React SPA
+  app_laravel/             ← Laravel
+    .env                   ← НЕ перезаписывается деплоем
+    storage/app/uploads/   ← НЕ перезаписывается
 ```
 
-Скрипт установит Docker, создаст пользователя `deploy`, откроет порты 22/80/443 и клонирует проект в `/opt/boevtracker`.
+## 1. FTP-доступ
 
-## 2. SSH-ключ для GitHub Actions
+В кабинете REG.RU → вкладка **«Доступы»** или в ISPmanager → FTP:
 
-На локальной машине (один раз):
+- хост (например `server167.hosting.reg.ru` или IP)
+- логин
+- пароль
 
-```bash
-ssh-keygen -t ed25519 -C "boevtracker-deploy" -f boevtracker_deploy -N ""
+В файловом менеджере откройте корень сайта `boevsoft.ru` и скопируйте путь.  
+Часто это:
+
+```text
+/www/boevsoft.ru/
 ```
 
-- **Публичный** ключ (`boevtracker_deploy.pub`) добавьте на VPS:
+или относительно домашнего каталога FTP:
 
-```bash
-echo "ssh-ed25519 AAAA..." >> /home/deploy/.ssh/authorized_keys
+```text
+www/boevsoft.ru/
 ```
 
-- **Приватный** ключ (`boevtracker_deploy`) — только в GitHub Secret `VPS_SSH_KEY` (весь файл целиком).
+**Важно:** путь должен указывать на каталог, где лежат `index.php` и `app_laravel`, а не внутрь `app_laravel`.
 
-Проверка:
+Проверка в FileZilla: зайдите по FTP и найдите папку, в которой уже есть `app_laravel` — это и есть `FTP_SERVER_DIR`.
 
-```bash
-ssh -i boevtracker_deploy deploy@YOUR_VPS_IP
-```
+## 2. GitHub Secrets
 
-## 3. Переменные окружения
+Репозиторий → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**:
 
-```bash
-sudo -u deploy nano /opt/boevtracker/.env
-```
+| Secret | Что вписать |
+|--------|-------------|
+| `FTP_HOST` | Хост FTP из панели |
+| `FTP_USER` | Логин FTP |
+| `FTP_PASSWORD` | Пароль FTP |
+| `FTP_SERVER_DIR` | Путь к корню сайта, **со слэшем в конце**, например `www/boevsoft.ru/` или `/www/boevsoft.ru/` |
 
-Обязательно замените:
+## 3. Что делает workflow
 
-| Переменная | Пример |
-|------------|--------|
-| `DOMAIN` | `tracker.example.ru` |
-| `ACME_EMAIL` | ваш email для Let's Encrypt |
-| `MYSQL_*` / `DATABASE_URL` | сильные пароли |
-| `JWT_SECRET`, `COOKIE_SECRET` | длинные случайные строки |
-| `CORS_ORIGIN` | `https://tracker.example.ru` |
-| `S3_PUBLIC_URL` | `https://tracker.example.ru/files` |
-| `MINIO_ROOT_*` / `S3_*` | сильные пароли (ключ = пароль MinIO) |
-| `VITE_API_URL` | оставьте пустым (same-origin) |
+Файл: [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)
 
-## 4. DNS
+При **push в `main`** (или вручную **Actions → Deploy → Run workflow**):
 
-В панели REG.RU создайте A-запись `DOMAIN` → IP VPS. Дождитесь распространения DNS перед первым запуском (нужно для HTTPS).
+1. Собирает frontend (`VITE_API_URL` пустой = same-origin)
+2. `composer install --no-dev` в `api/`
+3. Собирает пакет `dist-deploy/` (корень + `app_laravel`)
+4. Заливает по FTP
 
-## 5. Первый запуск
+**Не затирает на сервере:**
 
-```bash
-cd /opt/boevtracker
-sudo -u deploy docker compose -f docker-compose.prod.yml --env-file .env up -d --build
-sudo -u deploy docker compose -f docker-compose.prod.yml --env-file .env ps
-sudo -u deploy docker compose -f docker-compose.prod.yml --env-file .env logs -f backend
-```
+- `app_laravel/.env`
+- загруженные файлы в `storage/app/uploads`
 
-Проверка: `https://YOUR_DOMAIN/api/health` → `{"ok":true}`.
+## 4. Первый запуск автодеплоя
 
-## 6. Администратор
+1. Закоммитьте и запушьте текущий код в `main` (включая `api/`, workflow, скрипты).
+2. Откройте GitHub → **Actions** → дождитесь зелёного **Deploy to shared hosting**.
+3. Проверьте https://boevsoft.ru/api/health и логин.
 
-После первого старта (когда `prisma db push` уже отработал):
+Если workflow красный — откройте лог шага FTP: чаще всего неверный `FTP_SERVER_DIR` или пароль.
+
+## 5. После деплоя с новыми миграциями
+
+FTP не запускает Artisan. Если в коммите новые миграции, один раз по SSH:
 
 ```bash
-cd /opt/boevtracker/backend
-# локально сгенерировать hash:
-node scripts/hash-password.mjs 'your-admin-password'
-# подставьте hash в seed-admin.sql и выполните:
-sudo -u deploy docker compose -f /opt/boevtracker/docker-compose.prod.yml --env-file /opt/boevtracker/.env \
-  exec -T mariadb mariadb -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" < /opt/boevtracker/backend/prisma/seed-admin.sql
+cd ~/www/boevsoft.ru/app_laravel
+php artisan migrate --force
+php artisan config:clear
+php artisan route:clear
 ```
 
-Или зайдите в контейнер и выполните SQL вручную.
-
-## 7. GitHub Secrets
-
-Repository → Settings → Secrets and variables → Actions:
-
-| Secret | Значение |
-|--------|----------|
-| `VPS_HOST` | IP или hostname VPS |
-| `VPS_USER` | `deploy` |
-| `VPS_SSH_KEY` | содержимое приватного ключа |
-| `VPS_PORT` | `22` |
-
-Для **приватного** репозитория на сервере нужен read-only deploy key или HTTPS token, чтобы `git fetch` работал от пользователя `deploy`.
-
-## 8. Автодеплой
-
-Workflow: [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)
-
-Триггер: любой **push в `main`** (включая merge PR).
-
-Что делает:
-
-1. SSH на VPS
-2. `git fetch` + `git reset --hard origin/main`
-3. `docker compose -f docker-compose.prod.yml up -d --build --remove-orphans`
-4. `docker image prune -f`
-
-## 9. Проверка после деплоя
-
-- [ ] Actions → Deploy workflow зелёный
-- [ ] `https://DOMAIN/` открывается
-- [ ] Логин работает (cookie Secure)
-- [ ] Создание задачи и загрузка файла
-- [ ] `/api/health` отвечает ok
-
-## Откат
+## 6. Локальная сборка пакета (без GitHub)
 
 ```bash
-cd /opt/boevtracker
-sudo -u deploy git log --oneline -5
-sudo -u deploy git reset --hard <good-commit-sha>
-sudo -u deploy docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+node scripts/build-shared-deploy.mjs
 ```
+
+Результат: папка `dist-deploy/` — её содержимое можно залить вручную в корень сайта.
+
+## Если логин снова идёт на localhost
+
+В репозитории должно быть:
+
+- `frontend/.env` → `VITE_API_URL=`
+- `frontend/.env.production` → `VITE_API_URL=`
+
+Не коммитьте `VITE_API_URL=http://localhost:3001`.

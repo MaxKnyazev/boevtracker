@@ -1,0 +1,10 @@
+{
+  "name": "boevtracker",
+  "private": true,
+  "scripts": {
+    "build:frontend": "npm --prefix frontend run build",
+    "copy:frontend": "node scripts/copy-frontend.mjs",
+    "build": "npm run build:frontend && npm run copy:frontend",
+    "build:deploy": "node scripts/build-shared-deploy.mjs"
+  }
+}
