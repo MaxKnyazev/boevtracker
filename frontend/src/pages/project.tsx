@@ -766,6 +766,7 @@ export function ProjectPage({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 disabled={creating}
+                className="min-h-[120px] resize-y"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
