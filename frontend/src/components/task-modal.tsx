@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input, Label, Textarea } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { AppSelect } from '@/components/ui/select';
 import { PRIORITY_LABELS, formatDate, formatDuration, cn } from '@/lib/utils';
 import {
   UserAvatar,
@@ -652,19 +653,15 @@ export function TaskModal({
             <aside className="h-fit space-y-3 rounded-xl border border-border bg-background/50 p-3">
               <Meta label="Статус">
                 {writable ? (
-                  <select
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                    value={task.statusId}
-                    onChange={(e) =>
-                      saveField({ statusId: Number(e.target.value) })
-                    }
-                  >
-                    {(project?.statuses || []).map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+                  <AppSelect
+                    value={String(task.statusId)}
+                    onValueChange={(v) => saveField({ statusId: Number(v) })}
+                    options={(project?.statuses || []).map((s) => ({
+                      value: String(s.id),
+                      label: s.name,
+                    }))}
+                    className="w-full text-sm"
+                  />
                 ) : (
                   <Badge>{task.status?.name}</Badge>
                 )}
@@ -672,17 +669,15 @@ export function TaskModal({
 
               <Meta label="Приоритет">
                 {writable ? (
-                  <select
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  <AppSelect
                     value={task.priority}
-                    onChange={(e) => saveField({ priority: e.target.value })}
-                  >
-                    {Object.entries(PRIORITY_LABELS).map(([k, v]) => (
-                      <option key={k} value={k}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
+                    onValueChange={(v) => saveField({ priority: v })}
+                    options={Object.entries(PRIORITY_LABELS).map(([k, v]) => ({
+                      value: k,
+                      label: v,
+                    }))}
+                    className="w-full text-sm"
+                  />
                 ) : (
                   PRIORITY_LABELS[task.priority]
                 )}
@@ -690,24 +685,24 @@ export function TaskModal({
 
               <Meta label="Исполнитель">
                 {writable ? (
-                  <select
-                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                    value={task.assigneeId ?? ''}
-                    onChange={(e) =>
+                  <AppSelect
+                    value={
+                      task.assigneeId != null ? String(task.assigneeId) : 'none'
+                    }
+                    onValueChange={(v) =>
                       saveField({
-                        assigneeId: e.target.value
-                          ? Number(e.target.value)
-                          : null,
+                        assigneeId: v === 'none' ? null : Number(v),
                       })
                     }
-                  >
-                    <option value="">Не назначен</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {displayName(u)}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: 'none', label: 'Не назначен' },
+                      ...users.map((u) => ({
+                        value: String(u.id),
+                        label: displayName(u),
+                      })),
+                    ]}
+                    className="w-full text-sm"
+                  />
                 ) : (
                   displayName(task.assignee)
                 )}
