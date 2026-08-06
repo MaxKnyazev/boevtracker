@@ -47,7 +47,7 @@ import { TaskCard } from '@/components/task-card';
 import { TaskModal } from '@/components/task-modal';
 import { MoveBoardDialog } from '@/components/move-board-dialog';
 import { TaskViewControls } from '@/components/task-view-controls';
-import { FileDropZone, MAX_UPLOAD_FILE_SIZE } from '@/components/file-drop-zone';
+import { FileDropZone, MAX_UPLOAD_FILE_SIZE, extractClipboardFiles } from '@/components/file-drop-zone';
 import {
   DEFAULT_TASK_VIEW,
   applyTaskView,
@@ -806,7 +806,17 @@ export function ProjectPage({
           <DialogHeader>
             <DialogTitle>Новая задача</DialogTitle>
           </DialogHeader>
-          <form onSubmit={(e) => void createTask(e)} className="space-y-4">
+          <form
+            onSubmit={(e) => void createTask(e)}
+            className="space-y-4"
+            onPaste={(e) => {
+              if (creating) return;
+              const files = extractClipboardFiles(e.clipboardData);
+              if (!files.length) return;
+              e.preventDefault();
+              addCreateFiles(files);
+            }}
+          >
             <div className="space-y-2">
               <Label>Название</Label>
               <Input
@@ -859,10 +869,11 @@ export function ProjectPage({
               >
                 <UploadCloud className="h-5 w-5 text-muted-foreground" />
                 <div className="text-sm">
-                  Перетащите файлы сюда или нажмите для выбора
+                  Перетащите файлы сюда, нажмите для выбора или вставьте из
+                  буфера
                 </div>
                 <div className="text-[11px] text-muted-foreground">
-                  Можно несколько файлов, до 100 МБ каждый
+                  Можно несколько файлов, до 100 МБ каждый · Ctrl+V
                 </div>
               </FileDropZone>
               {createFiles.length > 0 && (
@@ -895,8 +906,7 @@ export function ProjectPage({
             <Button type="submit" className="w-full" disabled={creating}>
               {creating ? 'Создание...' : 'Создать'}
             </Button>
-          </form>
-        </DialogContent>
+          </form>        </DialogContent>
       </Dialog>
 
       <Dialog

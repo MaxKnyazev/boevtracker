@@ -300,4 +300,6 @@ export const api = {
   },
   attachmentUrl: (id: number, download = false) =>
     `${API_URL}/api/attachments/${id}${download ? '?download=1' : ''}`,
+  deleteAttachment: (id: number) =>
+    request<{ ok: boolean }>(`/api/attachments/${id}`, { method: 'DELETE' }),
 };

@@ -3,6 +3,8 @@ import {
   useEffect,
   useRef,
   useState,
+  type ClipboardEvent,
+  type MouseEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -13,6 +15,7 @@ import {
   Pencil,
   Plus,
   Send,
+  Trash2,
   UploadCloud,
   X,
 } from 'lucide-react';
@@ -28,7 +31,7 @@ import {
   UserAvatar,
   displayName,
 } from '@/components/user-avatar';
-import { FileDropZone, MAX_UPLOAD_FILE_SIZE } from '@/components/file-drop-zone';
+import { FileDropZone, MAX_UPLOAD_FILE_SIZE, extractClipboardFiles } from '@/components/file-drop-zone';
 import { useAuthStore } from '@/store/auth';
 
 function formatChatTime(value: string | Date): string {
@@ -126,6 +129,8 @@ export function TaskModal({
   const [descriptionDraft, setDescriptionDraft] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatFileInputRef = useRef<HTMLInputElement | null>(null);
+  const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const commentComposerRef = useRef<HTMLDivElement | null>(null);
 
   const load = async () => {
     try {
@@ -244,6 +249,37 @@ export function TaskModal({
     });
   };
 
+  const removeAttachment = async (file: Attachment) => {
+    if (!writable) return;
+    if (!confirm(`Удалить файл «${file.originalName}»?`)) return;
+    try {
+      await api.deleteAttachment(file.id);
+      if (lightboxFile?.id === file.id) setLightboxFile(null);
+      await load();
+      await onChanged();
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка удаления файла');
+    }
+  };
+
+  const handleModalPaste = (e: ClipboardEvent) => {
+    if (!writable || uploadingFiles || sending) return;
+    const files = extractClipboardFiles(e.clipboardData);
+    if (!files.length) return;
+    e.preventDefault();
+    const target = e.target as Node | null;
+    const commentActive =
+      commentComposerRef.current?.contains(document.activeElement) ||
+      (target != null &&
+        commentComposerRef.current?.contains(target) === true);
+    if (commentActive) {
+      addPendingFiles(files);
+    } else {
+      void uploadTaskFiles(files);
+    }
+  };
+
   if (!task) {
     return (
       <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -290,6 +326,7 @@ export function TaskModal({
           onPointerDownOutside={blockOutsideWhileLightbox}
           onInteractOutside={blockOutsideWhileLightbox}
           onFocusOutside={blockOutsideWhileLightbox}
+          onPaste={handleModalPaste}
           onEscapeKeyDown={(e) => {
             if (lightboxFile) {
               e.preventDefault();
@@ -480,10 +517,10 @@ export function TaskModal({
                     <div className="text-sm">
                       {uploadingFiles
                         ? 'Загрузка...'
-                        : 'Перетащите файлы сюда или нажмите для выбора'}
+                        : 'Перетащите файлы сюда, нажмите или вставьте из буфера'}
                     </div>
                     <div className="text-[11px] text-muted-foreground">
-                      Можно несколько файлов, до 100 МБ каждый
+                      Можно несколько файлов, до 100 МБ каждый · Ctrl+V
                     </div>
                   </FileDropZone>
                 )}
@@ -492,6 +529,8 @@ export function TaskModal({
                   emptyText={
                     writable ? undefined : 'К задаче пока нет файлов'
                   }
+                  canDelete={writable}
+                  onDelete={(file) => void removeAttachment(file)}
                   lightboxFile={lightboxFile}
                   onOpenLightbox={setLightboxFile}
                 />
@@ -566,83 +605,88 @@ export function TaskModal({
                 </div>
 
                 {writable ? (
-                  <FileDropZone
-                    disabled={sending}
-                    onFiles={addPendingFiles}
-                    inputRef={chatFileInputRef}
-                    disableClickOpen
-                    className="items-stretch justify-start rounded-none border-0 border-t border-border bg-card/80 p-3 text-left hover:bg-card/80"
-                    activeClassName="bg-primary/10"
-                  >
-                    {pendingFiles.length > 0 && (
-                      <div className="mb-2 flex flex-wrap gap-1.5">
-                        {pendingFiles.map((file, index) => (
-                          <div
-                            key={`${file.name}-${file.size}-${index}`}
-                            className="flex max-w-full items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-xs"
-                          >
-                            <FileIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                            <span className="min-w-0 truncate">{file.name}</span>
-                            <button
-                              type="button"
-                              className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setPendingFiles((prev) =>
-                                  prev.filter((_, i) => i !== index),
-                                );
-                              }}
-                              title="Убрать файл"
+                  <div ref={commentComposerRef}>
+                    <FileDropZone
+                      disabled={sending}
+                      onFiles={addPendingFiles}
+                      inputRef={chatFileInputRef}
+                      disableClickOpen
+                      className="items-stretch justify-start rounded-none border-0 border-t border-border bg-card/80 p-3 text-left hover:bg-card/80"
+                      activeClassName="bg-primary/10"
+                    >
+                      {pendingFiles.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-1.5">
+                          {pendingFiles.map((file, index) => (
+                            <div
+                              key={`${file.name}-${file.size}-${index}`}
+                              className="flex max-w-full items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-xs"
                             >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <form onSubmit={(e) => void sendComment(e)}>
-                      <div className="flex items-end gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-10 w-10 shrink-0"
-                          title="Прикрепить файлы"
-                          onClick={() => chatFileInputRef.current?.click()}
-                        >
-                          <Paperclip className="h-4 w-4" />
-                        </Button>
-                        <Textarea
-                          placeholder="Написать сообщение или перетащить файлы..."
-                          value={comment}
-                          onChange={(e) => setComment(e.target.value)}
-                          rows={2}
-                          className="min-h-[40px] flex-1 resize-none"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              void sendComment();
+                              <FileIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              <span className="min-w-0 truncate">
+                                {file.name}
+                              </span>
+                              <button
+                                type="button"
+                                className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPendingFiles((prev) =>
+                                    prev.filter((_, i) => i !== index),
+                                  );
+                                }}
+                                title="Убрать файл"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <form onSubmit={(e) => void sendComment(e)}>
+                        <div className="flex items-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-10 w-10 shrink-0"
+                            title="Прикрепить файлы"
+                            onClick={() => chatFileInputRef.current?.click()}
+                          >
+                            <Paperclip className="h-4 w-4" />
+                          </Button>
+                          <Textarea
+                            ref={commentInputRef}
+                            placeholder="Написать сообщение, перетащить или вставить файлы..."
+                            value={comment}
+                            onChange={(e) => setComment(e.target.value)}
+                            rows={2}
+                            className="min-h-[40px] flex-1 resize-none"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                void sendComment();
+                              }
+                            }}
+                          />
+                          <Button
+                            type="submit"
+                            size="icon"
+                            className="h-10 w-10 shrink-0"
+                            disabled={
+                              sending ||
+                              (!comment.trim() && pendingFiles.length === 0)
                             }
-                          }}
-                        />
-                        <Button
-                          type="submit"
-                          size="icon"
-                          className="h-10 w-10 shrink-0"
-                          disabled={
-                            sending ||
-                            (!comment.trim() && pendingFiles.length === 0)
-                          }
-                          title="Отправить"
-                        >
-                          <Send className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <p className="mt-1.5 text-[11px] text-muted-foreground">
-                        Enter — отправить · можно перетащить несколько файлов
-                      </p>
-                    </form>
-                  </FileDropZone>
+                            title="Отправить"
+                          >
+                            <Send className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <p className="mt-1.5 text-[11px] text-muted-foreground">
+                          Enter — отправить · файлы: перетащить или Ctrl+V
+                        </p>
+                      </form>
+                    </FileDropZone>
+                  </div>
                 ) : (
                   <div className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
                     Только просмотр
@@ -859,6 +903,8 @@ function FileGallery({
   emptyText,
   compact = false,
   onDark = false,
+  canDelete = false,
+  onDelete,
   lightboxFile,
   onOpenLightbox,
 }: {
@@ -866,6 +912,8 @@ function FileGallery({
   emptyText?: string;
   compact?: boolean;
   onDark?: boolean;
+  canDelete?: boolean;
+  onDelete?: (file: Attachment) => void;
   lightboxFile?: Attachment | null;
   onOpenLightbox?: (file: Attachment | null) => void;
 }) {
@@ -900,13 +948,23 @@ function FileGallery({
                 key={f.id}
                 file={f}
                 compact={compact}
+                onDark={onDark}
+                canDelete={canDelete}
+                onDelete={onDelete}
                 onOpen={() => openLightbox(f)}
               />
             ))}
           </div>
         )}
         {others.map((f) => (
-          <FileRow key={f.id} file={f} compact={compact} onDark={onDark} />
+          <FileRow
+            key={f.id}
+            file={f}
+            compact={compact}
+            onDark={onDark}
+            canDelete={canDelete}
+            onDelete={onDelete}
+          />
         ))}
       </div>
 
@@ -923,13 +981,33 @@ function FileGallery({
 function ChatImage({
   file,
   compact,
+  onDark,
+  canDelete,
+  onDelete,
   onOpen,
 }: {
   file: Attachment;
   compact?: boolean;
+  onDark?: boolean;
+  canDelete?: boolean;
+  onDelete?: (file: Attachment) => void;
   onOpen: () => void;
 }) {
   const previewUrl = useAuthObjectUrl(file.id, true);
+  const [downloading, setDownloading] = useState(false);
+
+  const onDownload = async (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDownloading(true);
+    try {
+      await downloadAttachment(file);
+    } catch {
+      window.open(file.url, '_blank', 'noopener,noreferrer');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   if (!previewUrl) {
     return (
@@ -943,24 +1021,64 @@ function ChatImage({
   }
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
       className={cn(
-        'group relative overflow-hidden rounded-lg border border-border/40 bg-background/20 text-left outline-none transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring',
+        'group relative overflow-hidden rounded-lg border bg-background/20',
         compact ? 'max-w-[220px]' : 'max-w-[280px]',
       )}
-      title={file.originalName}
+      style={{
+        borderColor: onDark
+          ? 'rgba(255, 255, 255, 0.4)'
+          : compact
+            ? 'rgba(125, 211, 252, 0.55)'
+            : undefined,
+      }}
     >
-      <img
-        src={previewUrl}
-        alt={file.originalName}
-        className={cn(
-          'block max-h-56 w-auto max-w-full object-contain',
-          compact ? 'max-h-44' : 'max-h-56',
+      <button
+        type="button"
+        onClick={onOpen}
+        className="block w-full text-left outline-none transition hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring"
+        title={file.originalName}
+      >
+        <img
+          src={previewUrl}
+          alt={file.originalName}
+          className={cn(
+            'block max-h-56 w-auto max-w-full object-contain',
+            compact ? 'max-h-44' : 'max-h-56',
+          )}
+        />
+      </button>
+      <div className="pointer-events-none absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon"
+          className="h-7 w-7 shadow-sm"
+          disabled={downloading}
+          onClick={(e) => void onDownload(e)}
+          title="Скачать"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </Button>
+        {canDelete && onDelete && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            className="h-7 w-7 shadow-sm text-destructive hover:text-destructive"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDelete(file);
+            }}
+            title="Удалить"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
         )}
-      />
-    </button>
+      </div>
+    </div>
   );
 }
 
@@ -1073,10 +1191,14 @@ function FileRow({
   file,
   compact,
   onDark,
+  canDelete,
+  onDelete,
 }: {
   file: Attachment;
   compact?: boolean;
   onDark?: boolean;
+  canDelete?: boolean;
+  onDelete?: (file: Attachment) => void;
 }) {
   const [downloading, setDownloading] = useState(false);
 
@@ -1096,10 +1218,19 @@ function FileRow({
       className={cn(
         'flex items-center gap-2 rounded-lg border px-2 py-1.5',
         onDark
-          ? 'border-primary-foreground/20 bg-primary-foreground/10'
-          : 'border-border bg-background/70',
+          ? 'border-white/40 bg-primary-foreground/10'
+          : compact
+            ? 'border-sky-300/50 bg-background/70'
+            : 'border-border bg-background/70',
         compact && 'py-1',
       )}
+      style={
+        onDark
+          ? { borderColor: 'rgba(255, 255, 255, 0.4)' }
+          : compact
+            ? { borderColor: 'rgba(125, 211, 252, 0.55)' }
+            : undefined
+      }
     >
       <div
         className={cn(
@@ -1137,17 +1268,31 @@ function FileRow({
         </div>
       </div>
 
-      <Button
-        type="button"
-        variant={onDark ? 'secondary' : 'outline'}
-        size="icon"
-        className="h-8 w-8 shrink-0"
-        disabled={downloading}
-        onClick={() => void onDownload()}
-        title="Скачать"
-      >
-        <Download className="h-3.5 w-3.5" />
-      </Button>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          type="button"
+          variant={onDark ? 'secondary' : 'outline'}
+          size="icon"
+          className="h-8 w-8"
+          disabled={downloading}
+          onClick={() => void onDownload()}
+          title="Скачать"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </Button>
+        {canDelete && onDelete && (
+          <Button
+            type="button"
+            variant={onDark ? 'secondary' : 'outline'}
+            size="icon"
+            className="h-8 w-8 text-destructive hover:text-destructive"
+            onClick={() => onDelete(file)}
+            title="Удалить"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
