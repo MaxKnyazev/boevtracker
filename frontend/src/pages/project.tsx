@@ -42,7 +42,8 @@ import { canWrite, useAuthStore } from '@/store/auth';
 import { PageHeader } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input, Label, Textarea } from '@/components/ui/input';
+import { Input, Label } from '@/components/ui/input';
+import { MentionsTextarea } from '@/components/mentions-textarea';
 import { TaskCard } from '@/components/task-card';
 import { TaskModal } from '@/components/task-modal';
 import { MoveBoardDialog } from '@/components/move-board-dialog';
@@ -828,9 +829,10 @@ export function ProjectPage({
             </div>
             <div className="space-y-2">
               <Label>Описание</Label>
-              <Textarea
+              <MentionsTextarea
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={setDescription}
+                users={users}
                 disabled={creating}
                 className="min-h-[120px] resize-y"
               />

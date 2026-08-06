@@ -14,17 +14,28 @@ import {
   Paperclip,
   Pencil,
   Plus,
+  Reply,
   Send,
   Trash2,
   UploadCloud,
   X,
 } from 'lucide-react';
-import { api, type Attachment, type Project, type Task, type User } from '@/lib/api';
+import { api, type Attachment, type Comment, type Project, type Task, type User } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input, Label, Textarea } from '@/components/ui/input';
+import { Input, Label } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { AppSelect } from '@/components/ui/select';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import {
+  MentionText,
+  MentionsTextarea,
+} from '@/components/mentions-textarea';
 import { PRIORITY_LABELS, formatDate, formatDuration, cn } from '@/lib/utils';
 import {
   EmptyAssigneeAvatar,
@@ -33,6 +44,24 @@ import {
 } from '@/components/user-avatar';
 import { FileDropZone, MAX_UPLOAD_FILE_SIZE, extractClipboardFiles } from '@/components/file-drop-zone';
 import { useAuthStore } from '@/store/auth';
+
+function replySnippet(
+  source: {
+    body?: string | null;
+    hasFiles?: boolean;
+    files?: Attachment[];
+  } | null | undefined,
+  max = 100,
+): string {
+  const body = (source?.body || '').trim();
+  if (body) {
+    return body.length > max ? `${body.slice(0, max)}…` : body;
+  }
+  if (source?.hasFiles || (source?.files && source.files.length > 0)) {
+    return 'Вложение';
+  }
+  return 'Сообщение';
+}
 
 function formatChatTime(value: string | Date): string {
   return new Date(value).toLocaleString('ru-RU', {
@@ -127,10 +156,18 @@ export function TaskModal({
   const [titleDraft, setTitleDraft] = useState('');
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [savingComment, setSavingComment] = useState(false);
+  const [replyTo, setReplyTo] = useState<Comment | null>(null);
+  const [highlightedCommentId, setHighlightedCommentId] = useState<number | null>(
+    null,
+  );
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatFileInputRef = useRef<HTMLInputElement | null>(null);
   const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
   const commentComposerRef = useRef<HTMLDivElement | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = async () => {
     try {
@@ -145,8 +182,24 @@ export function TaskModal({
   };
 
   useEffect(() => {
+    setReplyTo(null);
+    setEditingCommentId(null);
+    setEditDraft('');
+    setComment('');
+    setPendingFiles([]);
+    setHighlightedCommentId(null);
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = null;
+    }
     void load();
   }, [taskId]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -177,12 +230,8 @@ export function TaskModal({
     if (!writable || (!comment.trim() && pendingFiles.length === 0)) return;
     setSending(true);
     try {
-      const body =
-        comment.trim() ||
-        (pendingFiles.length === 1
-          ? pendingFiles[0].name
-          : `Вложения (${pendingFiles.length})`);
-      const res = await api.addComment(taskId, body);
+      const body = comment.trim();
+      const res = await api.addComment(taskId, body, replyTo?.id ?? null);
       if (pendingFiles.length > 0) {
         const oversized = pendingFiles.find(
           (f) => f.size > MAX_UPLOAD_FILE_SIZE,
@@ -195,6 +244,7 @@ export function TaskModal({
       }
       setComment('');
       setPendingFiles([]);
+      setReplyTo(null);
       await load();
       await onChanged();
     } catch (err) {
@@ -255,6 +305,110 @@ export function TaskModal({
     try {
       await api.deleteAttachment(file.id);
       if (lightboxFile?.id === file.id) setLightboxFile(null);
+      await load();
+      await onChanged();
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка удаления файла');
+    }
+  };
+
+  const startEditComment = (c: Comment) => {
+    setReplyTo(null);
+    setEditingCommentId(c.id);
+    setEditDraft(c.body);
+  };
+
+  const startReply = (c: Comment) => {
+    if (!writable) return;
+    setEditingCommentId(null);
+    setEditDraft('');
+    setReplyTo(c);
+    requestAnimationFrame(() => commentInputRef.current?.focus());
+  };
+
+  const jumpToComment = (commentId: number) => {
+    const el = document.querySelector<HTMLElement>(
+      `[data-comment-id="${commentId}"]`,
+    );
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedCommentId(commentId);
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedCommentId(null);
+      highlightTimerRef.current = null;
+    }, 1000);
+  };
+
+  const cancelEditComment = () => {
+    setEditingCommentId(null);
+    setEditDraft('');
+  };
+
+  const saveEditComment = async () => {
+    if (editingCommentId == null) return;
+    const current = task?.comments?.find((c) => c.id === editingCommentId);
+    const trimmed = editDraft.trim();
+    if (!trimmed && !(current?.files?.length)) {
+      try {
+        setSavingComment(true);
+        await api.deleteComment(editingCommentId);
+        cancelEditComment();
+        await load();
+        await onChanged();
+        setError('');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Ошибка удаления');
+      } finally {
+        setSavingComment(false);
+      }
+      return;
+    }
+    setSavingComment(true);
+    try {
+      await api.updateComment(editingCommentId, trimmed);
+      cancelEditComment();
+      await load();
+      await onChanged();
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка сохранения');
+    } finally {
+      setSavingComment(false);
+    }
+  };
+
+  const deleteComment = async (c: Comment) => {
+    if (!confirm('Удалить сообщение?')) return;
+    try {
+      if (editingCommentId === c.id) cancelEditComment();
+      await api.deleteComment(c.id);
+      await load();
+      await onChanged();
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка удаления');
+    }
+  };
+
+  const removeCommentFile = async (file: Attachment) => {
+    if (!confirm(`Удалить файл «${file.originalName}»?`)) return;
+    try {
+      const ownerComment = task?.comments?.find((c) =>
+        (c.files || []).some((f) => f.id === file.id),
+      );
+      const res = await api.deleteAttachment(file.id);
+      if (lightboxFile?.id === file.id) setLightboxFile(null);
+      if (
+        res.commentDeleted ||
+        (ownerComment &&
+          !(ownerComment.body || '').trim() &&
+          (ownerComment.files || []).filter((f) => f.id !== file.id).length ===
+            0)
+      ) {
+        if (editingCommentId === ownerComment?.id) cancelEditComment();
+      }
       await load();
       await onChanged();
       setError('');
@@ -337,7 +491,7 @@ export function TaskModal({
         <div className="max-h-[90vh] overflow-y-auto p-6 [scrollbar-gutter:stable]">
           <DialogHeader>
             <DialogTitle className="sr-only">{task.title}</DialogTitle>
-            <div className="flex min-h-11 items-start gap-2 pr-8">
+            <div className="flex min-h-11 min-w-0 items-start gap-2 pr-8">
               {writable && editingTitle ? (
                 <>
                   <Input
@@ -390,7 +544,10 @@ export function TaskModal({
                 </>
               ) : (
                 <>
-                  <h2 className="min-w-0 flex-1 py-2 text-lg font-semibold leading-snug">
+                  <h2
+                    className="min-w-0 flex-1 truncate py-2 text-lg font-semibold leading-snug"
+                    title={task.title}
+                  >
                     {task.title}
                   </h2>
                   {writable && (
@@ -442,9 +599,10 @@ export function TaskModal({
                 <div className="min-h-[192px]">
                   {writable && editingDescription ? (
                     <div className="flex gap-2">
-                      <Textarea
+                      <MentionsTextarea
                         value={descriptionDraft}
-                        onChange={(e) => setDescriptionDraft(e.target.value)}
+                        onChange={setDescriptionDraft}
+                        users={users}
                         className="min-h-[192px] flex-1 resize-y"
                         autoFocus
                         onKeyDown={(e) => {
@@ -482,8 +640,8 @@ export function TaskModal({
                       </div>
                     </div>
                   ) : task.description?.trim() ? (
-                    <div className="min-h-[192px] px-1 py-0.5 text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                      {task.description}
+                    <div className="min-h-[192px] min-w-0 overflow-hidden px-1 py-0.5 text-sm leading-relaxed whitespace-pre-wrap break-words text-muted-foreground [overflow-wrap:anywhere]">
+                      <MentionText text={task.description} users={users} />
                     </div>
                   ) : writable ? (
                     <button
@@ -552,51 +710,225 @@ export function TaskModal({
                   ) : (
                     comments.map((c) => {
                       const mine = me?.id === c.author?.id;
+                      const editing = editingCommentId === c.id;
+                      const highlighted = highlightedCommentId === c.id;
+                      const bubble = (
+                        <div
+                          className={cn(
+                            'min-w-0 rounded-2xl px-3 py-2 transition-[box-shadow,background-color] duration-300',
+                            editing
+                              ? 'w-[min(100%,28rem)] max-w-[90%]'
+                              : 'max-w-[85%]',
+                            mine
+                              ? 'rounded-tr-md bg-primary text-primary-foreground'
+                              : 'rounded-tl-md bg-muted/60',
+                            writable && !editing && 'cursor-context-menu',
+                            highlighted &&
+                              (mine
+                                ? 'ring-2 ring-white shadow-[0_0_0_4px_rgba(255,255,255,0.35)]'
+                                : 'ring-2 ring-primary shadow-[0_0_0_4px_rgba(37,99,235,0.25)]'),
+                          )}
+                          onDoubleClick={() => {
+                            if (writable && !editing) startReply(c);
+                          }}
+                        >
+                          <div
+                            className={cn(
+                              'mb-1 flex items-baseline gap-2 text-[11px]',
+                              mine
+                                ? 'text-primary-foreground/80'
+                                : 'text-muted-foreground',
+                            )}
+                          >
+                            <span className="font-medium">
+                              {displayName(c.author)}
+                            </span>
+                            <span>{formatChatTime(c.createdAt)}</span>
+                          </div>
+
+                          {!editing && c.replyTo ? (
+                            <button
+                              type="button"
+                              title="Перейти к сообщению"
+                              className={cn(
+                                'mb-2 w-full cursor-pointer rounded-md border-l-2 px-2 py-1 text-left text-[11px] leading-snug transition-opacity hover:opacity-90',
+                                mine
+                                  ? 'border-primary-foreground/50 bg-black/15 text-primary-foreground/85'
+                                  : 'border-primary/50 bg-background/70 text-muted-foreground',
+                              )}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                jumpToComment(c.replyTo!.id);
+                              }}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                            >
+                              <div
+                                className={cn(
+                                  'mb-0.5 font-medium',
+                                  mine
+                                    ? 'text-primary-foreground'
+                                    : 'text-foreground',
+                                )}
+                              >
+                                {displayName(c.replyTo.author)}
+                              </div>
+                              <div className="line-clamp-2 break-words [overflow-wrap:anywhere]">
+                                {replySnippet(c.replyTo)}
+                              </div>
+                            </button>
+                          ) : null}
+
+                          {editing ? (
+                            <div className="space-y-2">
+                              <MentionsTextarea
+                                value={editDraft}
+                                onChange={setEditDraft}
+                                users={users}
+                                rows={3}
+                                className="min-h-[72px] resize-y border bg-white/10 text-sm text-primary-foreground placeholder:text-primary-foreground/50 focus-visible:ring-white/40"
+                                style={{
+                                  borderColor: 'rgba(255, 255, 255, 0.45)',
+                                }}
+                                disabled={savingComment}
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    cancelEditComment();
+                                  }
+                                  if (
+                                    e.key === 'Enter' &&
+                                    (e.ctrlKey || e.metaKey)
+                                  ) {
+                                    e.preventDefault();
+                                    void saveEditComment();
+                                  }
+                                }}
+                              />
+                              {(c.files || []).length > 0 && (
+                                <FileGallery
+                                  files={c.files || []}
+                                  compact
+                                  onDark
+                                  canDelete
+                                  onDelete={(file) => void removeCommentFile(file)}
+                                  lightboxFile={lightboxFile}
+                                  onOpenLightbox={setLightboxFile}
+                                />
+                              )}
+                              <div className="flex flex-wrap gap-1.5">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  className="h-7 px-2 text-xs"
+                                  disabled={savingComment}
+                                  onClick={() => void saveEditComment()}
+                                >
+                                  Сохранить
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-xs text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+                                  disabled={savingComment}
+                                  onClick={cancelEditComment}
+                                >
+                                  Отмена
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {(c.body || '').trim() ? (
+                                <p className="whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere]">
+                                  <MentionText
+                                    text={c.body}
+                                    users={users}
+                                    mentionClassName={
+                                      mine
+                                        ? 'bg-white/15 text-primary-foreground'
+                                        : undefined
+                                    }
+                                  />
+                                </p>
+                              ) : null}
+                              {(c.files || []).length > 0 && (
+                                <div
+                                  className={cn((c.body || '').trim() && 'mt-2')}
+                                >
+                                  <FileGallery
+                                    files={c.files || []}
+                                    compact
+                                    onDark={mine}
+                                    lightboxFile={lightboxFile}
+                                    onOpenLightbox={setLightboxFile}
+                                  />
+                                </div>
+                              )}
+                              {c.editedAt && (
+                                <div
+                                  className={cn(
+                                    'mt-1.5 text-[10px] leading-none',
+                                    mine
+                                      ? 'text-primary-foreground/65'
+                                      : 'text-muted-foreground',
+                                  )}
+                                  title={formatChatTime(c.editedAt)}
+                                >
+                                  Отредактировано
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      );
+
                       return (
                         <div
                           key={c.id}
+                          data-comment-id={c.id}
                           className={cn(
-                            'flex gap-2',
+                            'flex min-w-0 gap-2',
                             mine ? 'flex-row-reverse' : 'flex-row',
                           )}
                         >
                           <UserAvatar user={c.author} size="sm" />
-                          <div
-                            className={cn(
-                              'max-w-[85%] rounded-2xl px-3 py-2',
-                              mine
-                                ? 'rounded-tr-md bg-primary text-primary-foreground'
-                                : 'rounded-tl-md bg-muted/60',
-                            )}
-                          >
-                            <div
-                              className={cn(
-                                'mb-1 flex items-baseline gap-2 text-[11px]',
-                                mine
-                                  ? 'text-primary-foreground/80'
-                                  : 'text-muted-foreground',
-                              )}
-                            >
-                              <span className="font-medium">
-                                {displayName(c.author)}
-                              </span>
-                              <span>{formatChatTime(c.createdAt)}</span>
-                            </div>
-                            <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                              {c.body}
-                            </p>
-                            {(c.files || []).length > 0 && (
-                              <div className="mt-2">
-                                <FileGallery
-                                  files={c.files || []}
-                                  compact
-                                  onDark={mine}
-                                  lightboxFile={lightboxFile}
-                                  onOpenLightbox={setLightboxFile}
-                                />
-                              </div>
-                            )}
-                          </div>
+                          {writable && !editing ? (
+                            <ContextMenu>
+                              <ContextMenuTrigger asChild>
+                                {bubble}
+                              </ContextMenuTrigger>
+                              <ContextMenuContent>
+                                <ContextMenuItem
+                                  onSelect={() => startReply(c)}
+                                >
+                                  <Reply className="mr-2 h-3.5 w-3.5" />
+                                  Ответить
+                                </ContextMenuItem>
+                                {mine ? (
+                                  <>
+                                    <ContextMenuItem
+                                      onSelect={() => startEditComment(c)}
+                                    >
+                                      <Pencil className="mr-2 h-3.5 w-3.5" />
+                                      Редактировать
+                                    </ContextMenuItem>
+                                    <ContextMenuItem
+                                      destructive
+                                      onSelect={() => void deleteComment(c)}
+                                    >
+                                      <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                      Удалить
+                                    </ContextMenuItem>
+                                  </>
+                                ) : null}
+                              </ContextMenuContent>
+                            </ContextMenu>
+                          ) : (
+                            bubble
+                          )}
                         </div>
                       );
                     })
@@ -614,6 +946,30 @@ export function TaskModal({
                       className="items-stretch justify-start rounded-none border-0 border-t border-border bg-card/80 p-3 text-left hover:bg-card/80"
                       activeClassName="bg-primary/10"
                     >
+                      {replyTo ? (
+                        <div className="mb-2 flex items-start gap-2 rounded-md border border-border bg-background px-2.5 py-2">
+                          <Reply className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[11px] font-medium text-foreground">
+                              Ответ {displayName(replyTo.author)}
+                            </div>
+                            <div className="truncate text-[11px] text-muted-foreground">
+                              {replySnippet(replyTo)}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setReplyTo(null);
+                            }}
+                            title="Отменить ответ"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : null}
                       {pendingFiles.length > 0 && (
                         <div className="mb-2 flex flex-wrap gap-1.5">
                           {pendingFiles.map((file, index) => (
@@ -643,7 +999,7 @@ export function TaskModal({
                         </div>
                       )}
                       <form onSubmit={(e) => void sendComment(e)}>
-                        <div className="flex items-end gap-2">
+                        <div className="flex items-center gap-2">
                           <Button
                             type="button"
                             variant="outline"
@@ -654,14 +1010,24 @@ export function TaskModal({
                           >
                             <Paperclip className="h-4 w-4" />
                           </Button>
-                          <Textarea
+                          <MentionsTextarea
                             ref={commentInputRef}
-                            placeholder="Написать сообщение, перетащить или вставить файлы..."
+                            users={users}
+                            placeholder={
+                              replyTo
+                                ? `Ответ ${displayName(replyTo.author)}…`
+                                : 'Текст необязателен, если есть вложения…'
+                            }
                             value={comment}
-                            onChange={(e) => setComment(e.target.value)}
-                            rows={2}
-                            className="min-h-[40px] flex-1 resize-none"
+                            onChange={setComment}
+                            rows={1}
+                            className="h-10 min-h-10 max-h-10 flex-1 resize-none py-2 leading-normal"
                             onKeyDown={(e) => {
+                              if (e.key === 'Escape' && replyTo) {
+                                e.preventDefault();
+                                setReplyTo(null);
+                                return;
+                              }
                               if (e.key === 'Enter' && !e.shiftKey) {
                                 e.preventDefault();
                                 void sendComment();
@@ -683,6 +1049,7 @@ export function TaskModal({
                         </div>
                         <p className="mt-1.5 text-[11px] text-muted-foreground">
                           Enter — отправить · файлы: перетащить или Ctrl+V
+                          {replyTo ? ' · Esc — отменить ответ' : ''}
                         </p>
                       </form>
                     </FileDropZone>
@@ -1049,6 +1416,15 @@ function ChatImage({
           )}
         />
       </button>
+      <div
+        className={cn(
+          'truncate px-2 py-1 text-[11px] font-medium',
+          onDark ? 'text-primary-foreground/90' : 'text-foreground',
+        )}
+        title={file.originalName}
+      >
+        {file.originalName}
+      </div>
       <div className="pointer-events-none absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
         <Button
           type="button"

@@ -32,6 +32,8 @@ class TaskController extends Controller
             'project.board',
             'comments.author',
             'comments.files',
+            'comments.replyTo.author',
+            'comments.replyTo.files',
             'statusHistories.user',
         ];
     }
@@ -442,24 +444,110 @@ class TaskController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'body' => ['required', 'string', 'min:1', 'max:5000'],
+            'body' => ['nullable', 'string', 'max:5000'],
+            'replyToId' => ['nullable', 'integer'],
         ]);
         if ($validator->fails()) {
-            return response()->json(['error' => 'Комментарий не может быть пустым'], 400);
+            return response()->json(['error' => 'Некорректный текст комментария'], 400);
         }
 
         if (! Task::query()->whereKey($id)->exists()) {
             return response()->json(['error' => 'Задача не найдена'], 404);
         }
 
+        $replyToId = $request->input('replyToId');
+        if ($replyToId !== null && $replyToId !== '') {
+            $replyToId = (int) $replyToId;
+            $replyExists = Comment::query()
+                ->whereKey($replyToId)
+                ->where('task_id', $id)
+                ->exists();
+            if (! $replyExists) {
+                return response()->json(['error' => 'Сообщение для ответа не найдено'], 404);
+            }
+        } else {
+            $replyToId = null;
+        }
+
         $comment = Comment::query()->create([
-            'body' => $validator->validated()['body'],
+            'body' => trim((string) ($request->input('body') ?? '')),
             'task_id' => $id,
             'author_id' => $user->id,
+            'reply_to_id' => $replyToId,
         ]);
-        $comment->load(['author', 'files']);
+        $comment->load(['author', 'files', 'replyTo.author', 'replyTo.files']);
 
         return response()->json(['comment' => ApiPresenter::comment($comment)], 201);
+    }
+
+    public function updateComment(Request $request, int $id): JsonResponse
+    {
+        $user = $this->user($request);
+        if ($resp = $this->forbidWrite($user)) {
+            return $resp;
+        }
+
+        $comment = Comment::query()->with('files')->find($id);
+        if (! $comment) {
+            return response()->json(['error' => 'Комментарий не найден'], 404);
+        }
+        if ($comment->author_id !== $user->id) {
+            return response()->json(['error' => 'Можно редактировать только свои сообщения'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'body' => ['nullable', 'string', 'max:5000'],
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['error' => 'Некорректный текст комментария'], 400);
+        }
+
+        $body = trim((string) ($request->input('body') ?? ''));
+        if ($body === '' && $comment->files->isEmpty()) {
+            foreach ($comment->files as $file) {
+                if ($this->files->exists($file->key)) {
+                    $this->files->delete($file->key);
+                }
+            }
+            $comment->delete();
+
+            return response()->json(['ok' => true, 'deleted' => true]);
+        }
+
+        if ($body !== $comment->body) {
+            $comment->body = $body;
+            $comment->edited_at = now();
+            $comment->save();
+        }
+
+        $comment->load(['author', 'files', 'replyTo.author', 'replyTo.files']);
+
+        return response()->json(['comment' => ApiPresenter::comment($comment)]);
+    }
+
+    public function deleteComment(Request $request, int $id): JsonResponse
+    {
+        $user = $this->user($request);
+        if ($resp = $this->forbidWrite($user)) {
+            return $resp;
+        }
+
+        $comment = Comment::query()->with('files')->find($id);
+        if (! $comment) {
+            return response()->json(['error' => 'Комментарий не найден'], 404);
+        }
+        if ($comment->author_id !== $user->id) {
+            return response()->json(['error' => 'Можно удалять только свои сообщения'], 403);
+        }
+
+        foreach ($comment->files as $file) {
+            if ($this->files->exists($file->key)) {
+                $this->files->delete($file->key);
+            }
+        }
+        $comment->delete();
+
+        return response()->json(['ok' => true]);
     }
 
     public function downloadAttachment(Request $request, int $id): BinaryFileResponse|JsonResponse
@@ -493,12 +581,31 @@ class TaskController extends Controller
             return response()->json(['error' => 'Файл не найден'], 404);
         }
 
+        $commentId = $attachment->comment_id;
+
         if ($this->files->exists($attachment->key)) {
             $this->files->delete($attachment->key);
         }
         $attachment->delete();
 
-        return response()->json(['ok' => true]);
+        $commentDeleted = false;
+        if ($commentId) {
+            $comment = Comment::query()->withCount('files')->find($commentId);
+            if ($comment) {
+                if (trim((string) $comment->body) === '' && (int) $comment->files_count === 0) {
+                    $comment->delete();
+                    $commentDeleted = true;
+                } else {
+                    $comment->edited_at = now();
+                    $comment->save();
+                }
+            }
+        }
+
+        return response()->json([
+            'ok' => true,
+            'commentDeleted' => $commentDeleted,
+        ]);
     }
 
     public function uploadTaskFiles(Request $request, int $id): JsonResponse
