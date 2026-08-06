@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { AppSelect } from '@/components/ui/select';
 import { PRIORITY_LABELS, formatDate, formatDuration, cn } from '@/lib/utils';
 import {
+  EmptyAssigneeAvatar,
   UserAvatar,
   displayName,
 } from '@/components/user-avatar';
