@@ -39,6 +39,14 @@ export type ProjectStatus = {
   projectId: number;
 };
 
+export type TaskStatusHistory = {
+  id: number;
+  fromStatusName?: string | null;
+  toStatusName: string;
+  createdAt: string;
+  user: PublicUser | null;
+};
+
 export type Task = {
   id: number;
   title: string;
@@ -63,6 +71,7 @@ export type Task = {
     board?: { id: number; name: string };
   };
   comments?: Comment[];
+  statusHistory?: TaskStatusHistory[];
   _count?: { comments: number };
 };
 
