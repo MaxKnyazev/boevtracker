@@ -65,8 +65,18 @@ export function AppLayout() {
           )}
         >
           <div className={cn(collapsed && 'text-center')}>
-            <div className="text-xl font-bold tracking-tight text-primary">
-              {collapsed ? 'BT' : 'BoevTracker'}
+            <div className="text-xl font-bold tracking-tight">
+              {collapsed ? (
+                <>
+                  <span className="text-primary">B</span>
+                  <span className="text-slate-600 dark:text-white">T</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-primary">Boev</span>
+                  <span className="text-slate-600 dark:text-white">Tracker</span>
+                </>
+              )}
             </div>
             {!collapsed && (
               <div className="mt-1 text-xs text-muted-foreground">
