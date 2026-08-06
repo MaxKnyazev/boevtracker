@@ -144,6 +144,7 @@ export function TasksPage() {
         users={users}
         boards={boards}
         projects={projects}
+        showSort={false}
         className="mb-4"
       />
 
