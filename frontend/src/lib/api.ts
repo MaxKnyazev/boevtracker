@@ -94,6 +94,21 @@ export type Comment = {
   files: Attachment[];
 };
 
+export type AppNotificationType = 'mention' | 'reply' | 'assignee';
+
+export type AppNotification = {
+  id: number;
+  type: AppNotificationType;
+  title: string;
+  body?: string | null;
+  taskId?: number | null;
+  taskTitle?: string | null;
+  commentId?: number | null;
+  readAt?: string | null;
+  createdAt: string;
+  actor?: PublicUser | null;
+};
+
 export type Project = {
   id: number;
   name: string;
@@ -328,4 +343,17 @@ export const api = {
       `/api/attachments/${id}`,
       { method: 'DELETE' },
     ),
+
+  notifications: (sinceId?: number) =>
+    request<{ notifications: AppNotification[]; unreadCount: number }>(
+      `/api/notifications${sinceId != null ? `?sinceId=${sinceId}` : ''}`,
+    ),
+  notificationsUnreadCount: () =>
+    request<{ unreadCount: number }>('/api/notifications/unread-count'),
+  markNotificationRead: (id: number) =>
+    request<{ notification: AppNotification }>(`/api/notifications/${id}/read`, {
+      method: 'POST',
+    }),
+  markAllNotificationsRead: () =>
+    request<{ ok: boolean }>('/api/notifications/read-all', { method: 'POST' }),
 };

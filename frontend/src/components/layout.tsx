@@ -6,10 +6,13 @@ import {
   LogOut,
   FolderKanban,
   ListTodo,
+  Bell,
   PanelLeftClose,
   PanelLeft,
 } from 'lucide-react';
 import { useAuthStore, canManageUsers } from '@/store/auth';
+import { useNotificationsStore } from '@/store/notifications';
+import { NotificationWatcher } from '@/components/notification-watcher';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ROLE_LABELS, cn } from '@/lib/utils';
@@ -19,6 +22,7 @@ const SIDEBAR_COLLAPSED_KEY = 'boevtracker.sidebarCollapsed';
 
 export function AppLayout() {
   const { user, logout } = useAuthStore();
+  const unreadCount = useNotificationsStore((s) => s.unreadCount);
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -109,6 +113,22 @@ export function AppLayout() {
             <ListTodo className="h-4 w-4 shrink-0" />
             {!collapsed && 'Задачи'}
           </NavLink>
+          <NavLink to="/notifications" className={linkClass} title="Уведомления">
+            <span className="relative shrink-0">
+              <Bell className="h-4 w-4" />
+              {unreadCount > 0 && (
+                <span
+                  className={cn(
+                    'absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-0.5 text-[10px] font-semibold text-destructive-foreground',
+                    collapsed && '-right-2 -top-2',
+                  )}
+                >
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </span>
+            {!collapsed && 'Уведомления'}
+          </NavLink>
           {canManageUsers(user?.role) && (
             <NavLink to="/users" className={linkClass} title="Пользователи">
               <Users className="h-4 w-4 shrink-0" />
@@ -165,6 +185,7 @@ export function AppLayout() {
           <Outlet />
         </div>
       </main>
+      <NotificationWatcher />
     </div>
   );
 }
