@@ -695,10 +695,20 @@ export function TaskModal({
                       })
                     }
                     options={[
-                      { value: 'none', label: 'Не назначен' },
+                      {
+                        value: 'none',
+                        label: 'Не назначен',
+                        leading: (
+                          <EmptyAssigneeAvatar
+                            size="sm"
+                            title="Не назначен"
+                          />
+                        ),
+                      },
                       ...users.map((u) => ({
                         value: String(u.id),
                         label: displayName(u),
+                        leading: <UserAvatar user={u} size="sm" />,
                       })),
                     ]}
                     className="w-full text-sm"

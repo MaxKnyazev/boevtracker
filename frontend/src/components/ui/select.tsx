@@ -83,7 +83,11 @@ export const SelectItem = React.forwardRef<
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;
 
-export type SelectOption = { value: string; label: string };
+export type SelectOption = {
+  value: string;
+  label: string;
+  leading?: React.ReactNode;
+};
 
 /** Compact controlled select for filters / forms. */
 export function AppSelect({
@@ -113,7 +117,14 @@ export function AppSelect({
       <SelectContent>
         {options.map((opt) => (
           <SelectItem key={opt.value} value={opt.value}>
-            {opt.label}
+            {opt.leading ? (
+              <span className="flex min-w-0 items-center gap-2">
+                {opt.leading}
+                <span className="truncate">{opt.label}</span>
+              </span>
+            ) : (
+              opt.label
+            )}
           </SelectItem>
         ))}
       </SelectContent>

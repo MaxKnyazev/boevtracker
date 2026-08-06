@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Board;
 use App\Support\ApiPresenter;
+use App\Support\TaskBuckets;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -17,11 +18,19 @@ class BoardController extends Controller
         }
 
         $boards = Board::query()
-            ->with('createdBy')
+            ->with(['createdBy', 'projects.statuses'])
             ->withCount('projects')
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn (Board $b) => ApiPresenter::board($b))
+            ->map(function (Board $b) {
+                TaskBuckets::attachToProjects($b->projects);
+                $counts = [
+                    'openTasks' => (int) $b->projects->sum('open_tasks_count'),
+                    'inProgressTasks' => (int) $b->projects->sum('in_progress_tasks_count'),
+                ];
+
+                return ApiPresenter::board($b, false, $counts);
+            })
             ->values();
 
         return response()->json(['boards' => $boards]);
@@ -47,7 +56,12 @@ class BoardController extends Controller
         ]);
         $board->load('createdBy')->loadCount('projects');
 
-        return response()->json(['board' => ApiPresenter::board($board)], 201);
+        return response()->json([
+            'board' => ApiPresenter::board($board, false, [
+                'openTasks' => 0,
+                'inProgressTasks' => 0,
+            ]),
+        ], 201);
     }
 
     public function show(Request $request, int $id): JsonResponse
@@ -67,7 +81,14 @@ class BoardController extends Controller
             return response()->json(['error' => 'Доска не найдена'], 404);
         }
 
-        return response()->json(['board' => ApiPresenter::board($board, true)]);
+        $board->loadCount('projects');
+        TaskBuckets::attachToProjects($board->projects);
+        $counts = [
+            'openTasks' => (int) $board->projects->sum('open_tasks_count'),
+            'inProgressTasks' => (int) $board->projects->sum('in_progress_tasks_count'),
+        ];
+
+        return response()->json(['board' => ApiPresenter::board($board, true, $counts)]);
     }
 
     public function update(Request $request, int $id): JsonResponse
@@ -89,9 +110,14 @@ class BoardController extends Controller
         }
 
         $board->update(['name' => $validator->validated()['name']]);
-        $board->load('createdBy')->loadCount('projects');
+        $board->load(['createdBy', 'projects.statuses'])->loadCount('projects');
+        TaskBuckets::attachToProjects($board->projects);
+        $counts = [
+            'openTasks' => (int) $board->projects->sum('open_tasks_count'),
+            'inProgressTasks' => (int) $board->projects->sum('in_progress_tasks_count'),
+        ];
 
-        return response()->json(['board' => ApiPresenter::board($board)]);
+        return response()->json(['board' => ApiPresenter::board($board, false, $counts)]);
     }
 
     public function destroy(Request $request, int $id): JsonResponse
@@ -100,9 +126,14 @@ class BoardController extends Controller
             return response()->json(['error' => 'Только администратор может удалять доски'], 403);
         }
 
-        $board = Board::query()->find($id);
+        $board = Board::query()->withCount('projects')->find($id);
         if (! $board) {
             return response()->json(['error' => 'Доска не найдена'], 404);
+        }
+        if ($board->projects_count > 0) {
+            return response()->json([
+                'error' => 'Нельзя удалить рабочее пространство с проектами. Сначала удалите проекты.',
+            ], 400);
         }
 
         $board->delete();
