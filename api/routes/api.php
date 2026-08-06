@@ -4,6 +4,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\RealtimeController;
 use App\Http\Controllers\StatusController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\UserController;
@@ -20,6 +21,8 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::middleware(AuthenticateJwt::class)->group(function () {
+    Route::get('/realtime/wait', [RealtimeController::class, 'wait']);
+
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);

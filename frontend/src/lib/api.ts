@@ -356,4 +356,35 @@ export const api = {
     }),
   markAllNotificationsRead: () =>
     request<{ ok: boolean }>('/api/notifications/read-all', { method: 'POST' }),
+
+  realtimeWait: (
+    params: {
+      afterNotificationId?: number;
+      taskId?: number | null;
+      taskVersion?: string;
+      timeout?: number;
+    },
+    signal?: AbortSignal,
+  ) => {
+    const q = new URLSearchParams();
+    if (params.afterNotificationId != null) {
+      q.set('afterNotificationId', String(params.afterNotificationId));
+    }
+    if (params.taskId != null) {
+      q.set('taskId', String(params.taskId));
+    }
+    if (params.taskVersion) {
+      q.set('taskVersion', params.taskVersion);
+    }
+    if (params.timeout != null) {
+      q.set('timeout', String(params.timeout));
+    }
+    return request<{
+      notifications: AppNotification[];
+      unreadCount: number;
+      afterNotificationId: number;
+      task: Task | null;
+      taskVersion: string | null;
+    }>(`/api/realtime/wait?${q.toString()}`, { signal });
+  },
 };

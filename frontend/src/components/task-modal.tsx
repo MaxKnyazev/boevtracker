@@ -44,6 +44,7 @@ import {
 } from '@/components/user-avatar';
 import { FileDropZone, MAX_UPLOAD_FILE_SIZE, extractClipboardFiles } from '@/components/file-drop-zone';
 import { useAuthStore } from '@/store/auth';
+import { realtimeClient } from '@/lib/realtime';
 
 function replySnippet(
   source: {
@@ -193,6 +194,16 @@ export function TaskModal({
       highlightTimerRef.current = null;
     }
     void load();
+  }, [taskId]);
+
+  useEffect(() => {
+    realtimeClient.watchTask(taskId, (next, version) => {
+      setTask(next);
+      realtimeClient.setTaskVersion(taskId, version);
+    });
+    return () => {
+      realtimeClient.unwatchTask(taskId);
+    };
   }, [taskId]);
 
   useEffect(() => {

@@ -57,6 +57,7 @@ export function NotificationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { setUnreadCount, markLocalRead, markAllLocalRead, refreshUnread } =
     useNotificationsStore();
+  const liveRevision = useNotificationsStore((s) => s.liveRevision);
 
   const [items, setItems] = useState<AppNotification[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -110,6 +111,11 @@ export function NotificationsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (liveRevision <= 0) return;
+    void load();
+  }, [liveRevision, load]);
 
   useEffect(() => {
     const sync = () => {

@@ -5,6 +5,7 @@ type NotificationsState = {
   unreadCount: number;
   lastSeenId: number;
   userId: number | null;
+  liveRevision: number;
   hydrateForUser: (userId: number) => void;
   setUnreadCount: (count: number) => void;
   seedLastSeen: (id: number) => void;
@@ -40,6 +41,7 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
   unreadCount: 0,
   lastSeenId: 0,
   userId: null,
+  liveRevision: 0,
   hydrateForUser: (userId) => {
     set({
       userId,
@@ -59,7 +61,10 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
     const { lastSeenId, userId } = get();
     if (userId == null) return;
     const maxId = Math.max(...items.map((n) => n.id), lastSeenId);
-    set({ lastSeenId: maxId });
+    set((s) => ({
+      lastSeenId: maxId,
+      liveRevision: s.liveRevision + 1,
+    }));
     writeLastSeenId(userId, maxId);
   },
   markLocalRead: () => {
