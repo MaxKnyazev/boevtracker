@@ -55,4 +55,9 @@ class Task extends Model
     {
         return $this->hasMany(Attachment::class);
     }
+
+    public function statusHistories(): HasMany
+    {
+        return $this->hasMany(TaskStatusHistory::class)->orderByDesc('created_at');
+    }
 }

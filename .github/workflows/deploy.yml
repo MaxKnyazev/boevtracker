@@ -85,3 +85,22 @@ jobs:
             **/storage/framework/views/**
             **/storage/app/uploads/**
             !**/storage/app/uploads/.gitignore
+
+      - name: Apply migrations (SSH)
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script_stop: true
+          envs: APP_DIR
+          script: |
+            set -e
+            cd "$APP_DIR"
+            php artisan migrate --force --no-interaction
+            php artisan config:clear
+            php artisan route:clear
+        env:
+          APP_DIR: ${{ secrets.SSH_APP_DIR }}

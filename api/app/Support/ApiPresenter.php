@@ -8,6 +8,7 @@ use App\Models\Comment;
 use App\Models\Project;
 use App\Models\ProjectStatus;
 use App\Models\Task;
+use App\Models\TaskStatusHistory;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 
@@ -125,6 +126,13 @@ class ApiPresenter
             $data['comments'] = $task->comments->map(fn ($c) => self::comment($c))->values()->all();
         }
 
+        if ($task->relationLoaded('statusHistories')) {
+            $data['statusHistory'] = $task->statusHistories
+                ->map(fn (TaskStatusHistory $h) => self::statusHistory($h))
+                ->values()
+                ->all();
+        }
+
         if ($task->relationLoaded('comments') && ! $withComments) {
             $data['_count'] = ['comments' => $task->comments->count()];
         } elseif (isset($task->comments_count)) {
@@ -132,6 +140,17 @@ class ApiPresenter
         }
 
         return $data;
+    }
+
+    public static function statusHistory(TaskStatusHistory $history): array
+    {
+        return [
+            'id' => $history->id,
+            'fromStatusName' => $history->from_status_name,
+            'toStatusName' => $history->to_status_name,
+            'createdAt' => self::date($history->created_at),
+            'user' => self::publicUser($history->user),
+        ];
     }
 
     public static function project(Project $project, bool $withTasks = false): array

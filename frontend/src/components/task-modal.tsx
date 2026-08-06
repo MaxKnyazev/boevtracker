@@ -731,6 +731,61 @@ export function TaskModal({
               </Meta>
               <Meta label="Автор">{displayName(task.createdBy)}</Meta>
 
+              <div className="space-y-2 border-t border-border pt-3">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                  История статусов
+                </div>
+                {(task.statusHistory || []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Пока нет записей
+                  </p>
+                ) : (
+                  <ul className="max-h-52 space-y-2.5 overflow-y-auto pr-1">
+                    {(task.statusHistory || []).map((entry) => (
+                      <li
+                        key={entry.id}
+                        className="rounded-md border border-border/60 bg-background/40 px-2.5 py-2"
+                      >
+                        <div className="flex items-start gap-2">
+                          <UserAvatar user={entry.user} size="sm" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs leading-snug">
+                              <span className="font-medium">
+                                {displayName(entry.user)}
+                              </span>
+                              {entry.fromStatusName ? (
+                                <>
+                                  {' '}
+                                  перевёл из{' '}
+                                  <span className="font-medium">
+                                    «{entry.fromStatusName}»
+                                  </span>{' '}
+                                  в{' '}
+                                  <span className="font-medium">
+                                    «{entry.toStatusName}»
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  {' '}
+                                  установил статус{' '}
+                                  <span className="font-medium">
+                                    «{entry.toStatusName}»
+                                  </span>
+                                </>
+                              )}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              {formatChatTime(entry.createdAt)}
+                            </p>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
               {writable && (
                 <div className="space-y-2 pt-2">
                   <Button

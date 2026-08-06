@@ -7,6 +7,8 @@ use App\Models\Comment;
 use App\Models\Project;
 use App\Models\ProjectStatus;
 use App\Models\Task;
+use App\Models\TaskStatusHistory;
+use App\Models\User;
 use App\Services\FileStorage;
 use App\Support\ApiPresenter;
 use App\Support\Constants;
@@ -30,7 +32,37 @@ class TaskController extends Controller
             'project.board',
             'comments.author',
             'comments.files',
+            'statusHistories.user',
         ];
+    }
+
+    private function recordStatusChange(
+        Task $task,
+        User $user,
+        ?int $fromStatusId,
+        int $toStatusId,
+    ): void {
+        if ($fromStatusId !== null && $fromStatusId === $toStatusId) {
+            return;
+        }
+
+        $from = $fromStatusId
+            ? ProjectStatus::query()->find($fromStatusId)
+            : null;
+        $to = ProjectStatus::query()->find($toStatusId);
+        if (! $to) {
+            return;
+        }
+
+        TaskStatusHistory::query()->create([
+            'task_id' => $task->id,
+            'user_id' => $user->id,
+            'from_status_id' => $from?->id,
+            'to_status_id' => $to->id,
+            'from_status_name' => $from?->name,
+            'to_status_name' => $to->name,
+            'created_at' => now(),
+        ]);
     }
 
     private function resolveOpenStatus(int $projectId, ?string $preferredName = null): ?ProjectStatus
@@ -127,6 +159,8 @@ class TaskController extends Controller
             'status_changed_at' => now(),
         ]);
 
+        $this->recordStatusChange($task, $user, null, (int) $statusId);
+
         $task->load($this->taskRelations());
 
         return response()->json(['task' => ApiPresenter::task($task, true)], 201);
@@ -148,7 +182,8 @@ class TaskController extends Controller
 
     public function update(Request $request, int $id): JsonResponse
     {
-        if ($resp = $this->forbidWrite($this->user($request))) {
+        $user = $this->user($request);
+        if ($resp = $this->forbidWrite($user)) {
             return $resp;
         }
 
@@ -188,6 +223,9 @@ class TaskController extends Controller
             $update['assignee_id'] = $data['assigneeId'];
         }
 
+        $fromStatusId = (int) $task->status_id;
+        $toStatusId = $fromStatusId;
+
         $targetProjectId = $task->project_id;
         if (isset($data['projectId']) && (int) $data['projectId'] !== $task->project_id) {
             $targetProject = Project::query()->with('statuses')->find($data['projectId']);
@@ -202,6 +240,7 @@ class TaskController extends Controller
             }
             $update['status_id'] = $mapped->id;
             $update['status_changed_at'] = now();
+            $toStatusId = (int) $mapped->id;
         }
 
         if (isset($data['statusId'])) {
@@ -215,10 +254,16 @@ class TaskController extends Controller
             if ($status->id !== $task->status_id) {
                 $update['status_id'] = $status->id;
                 $update['status_changed_at'] = now();
+                $toStatusId = (int) $status->id;
             }
         }
 
         $task->update($update);
+
+        if ($toStatusId !== $fromStatusId) {
+            $this->recordStatusChange($task, $user, $fromStatusId, $toStatusId);
+        }
+
         $task->load($this->taskRelations());
 
         return response()->json(['task' => ApiPresenter::task($task, true)]);
@@ -244,7 +289,8 @@ class TaskController extends Controller
 
     public function position(Request $request, int $id): JsonResponse
     {
-        if ($resp = $this->forbidWrite($this->user($request))) {
+        $user = $this->user($request);
+        if ($resp = $this->forbidWrite($user)) {
             return $resp;
         }
 
@@ -269,6 +315,7 @@ class TaskController extends Controller
             return response()->json(['error' => 'Статус не принадлежит проекту'], 400);
         }
 
+        $fromStatusId = (int) $task->status_id;
         $statusChanged = $status->id !== $task->status_id;
         $siblings = Task::query()
             ->where('status_id', $status->id)
@@ -285,7 +332,7 @@ class TaskController extends Controller
             array_slice($siblings, $index)
         );
 
-        DB::transaction(function () use ($task, $status, $statusChanged, $index, $orderedIds) {
+        DB::transaction(function () use ($task, $status, $statusChanged, $index, $orderedIds, $user, $fromStatusId) {
             $payload = [
                 'status_id' => $status->id,
                 'sort_order' => $index,
@@ -298,6 +345,10 @@ class TaskController extends Controller
             foreach ($orderedIds as $order => $taskId) {
                 Task::query()->where('id', $taskId)->update(['sort_order' => $order]);
             }
+
+            if ($statusChanged) {
+                $this->recordStatusChange($task, $user, $fromStatusId, (int) $status->id);
+            }
         });
 
         $task = Task::query()->with($this->taskRelations())->find($id);
@@ -307,7 +358,8 @@ class TaskController extends Controller
 
     public function moveBoard(Request $request, int $id): JsonResponse
     {
-        if ($resp = $this->forbidWrite($this->user($request))) {
+        $user = $this->user($request);
+        if ($resp = $this->forbidWrite($user)) {
             return $resp;
         }
 
@@ -348,11 +400,19 @@ class TaskController extends Controller
             $statusId = $mapped->id;
         }
 
+        $fromStatusId = (int) $task->status_id;
+        $toStatusId = (int) $statusId;
+
         $task->update([
             'project_id' => $project->id,
             'status_id' => $statusId,
             'status_changed_at' => now(),
         ]);
+
+        if ($toStatusId !== $fromStatusId) {
+            $this->recordStatusChange($task, $user, $fromStatusId, $toStatusId);
+        }
+
         $task->load($this->taskRelations());
 
         return response()->json(['task' => ApiPresenter::task($task, true)]);

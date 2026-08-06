@@ -47,6 +47,13 @@ www/boevsoft.ru/
 | `FTP_USER` | Логин FTP |
 | `FTP_PASSWORD` | Пароль FTP |
 | `FTP_SERVER_DIR` | Путь к корню сайта, **со слэшем в конце**, например `www/boevsoft.ru/` или `/www/boevsoft.ru/` |
+| `SSH_HOST` | Хост SSH (часто тот же, что `FTP_HOST`) |
+| `SSH_USER` | Логин SSH (часто тот же, что `FTP_USER`, напр. `u2496499`) |
+| `SSH_PASSWORD` | Пароль SSH **или** вместо него `SSH_PRIVATE_KEY` |
+| `SSH_PRIVATE_KEY` | (опционально) приватный ключ целиком, если вход по ключу |
+| `SSH_APP_DIR` | Абсолютный путь к Laravel на сервере, напр. `/var/www/u2496499/data/www/boevsoft.ru/app_laravel` или `~/www/boevsoft.ru/app_laravel` |
+
+SSH в ISPmanager / REG.RU обычно включается в разделе доступов того же пользователя. Порт SSH по умолчанию `22` (если другой — правьте `port` в workflow).
 
 ## 3. Что делает workflow
 
@@ -58,6 +65,7 @@ www/boevsoft.ru/
 2. Кладёт **свежий** SPA в пакет (не старый `api/public` из git)
 3. Собирает `dist-deploy/` (корень сайта + `app_laravel` **без** `vendor`)
 4. Заливает по FTP
+5. По SSH: `php artisan migrate --force` + очистка config/route cache
 
 Обычный деплой занимает **несколько минут**, не десятки.
 
@@ -82,11 +90,13 @@ composer install --no-dev --optimize-autoloader
 2. Откройте GitHub → **Actions** → дождитесь зелёного **Deploy to shared hosting**.
 3. Проверьте https://boevsoft.ru/api/health и логин.
 
-Если workflow красный — откройте лог шага FTP: чаще всего неверный `FTP_SERVER_DIR` или пароль.
+Если workflow красный — откройте лог шага FTP или SSH: чаще всего неверный путь/`SSH_APP_DIR` или пароль.
 
-## 5. После деплоя с новыми миграциями
+## 5. Миграции
 
-FTP не запускает Artisan. Если в коммите новые миграции, один раз по SSH:
+После FTP workflow сам применяет миграции по SSH. Отдельно заходить на сервер не нужно, если настроены `SSH_*` secrets.
+
+Ручной запасной вариант:
 
 ```bash
 cd ~/www/boevsoft.ru/app_laravel
@@ -94,7 +104,6 @@ php artisan migrate --force
 php artisan config:clear
 php artisan route:clear
 ```
-
 ## 6. Локальная сборка пакета (без GitHub)
 
 ```bash
