@@ -56,4 +56,5 @@ Route::middleware(AuthenticateJwt::class)->group(function () {
 
     Route::post('/comments/{id}/files', [TaskController::class, 'uploadCommentFiles'])->whereNumber('id');
     Route::get('/attachments/{id}', [TaskController::class, 'downloadAttachment'])->whereNumber('id');
+    Route::delete('/attachments/{id}', [TaskController::class, 'deleteAttachment'])->whereNumber('id');
 });

@@ -3,6 +3,48 @@ import { cn } from '@/lib/utils';
 
 export const MAX_UPLOAD_FILE_SIZE = 100 * 1024 * 1024;
 
+function extensionFromMime(type: string): string {
+  if (type === 'image/png') return 'png';
+  if (type === 'image/jpeg') return 'jpg';
+  if (type === 'image/gif') return 'gif';
+  if (type === 'image/webp') return 'webp';
+  if (type === 'image/svg+xml') return 'svg';
+  if (type.includes('/')) {
+    const part = type.split('/')[1]?.split(';')[0];
+    if (part) return part.replace(/[^a-z0-9]+/gi, '') || 'bin';
+  }
+  return 'bin';
+}
+
+function normalizePasteFile(file: File, index: number): File {
+  const name = file.name?.trim();
+  if (name && name !== 'blob') return file;
+  const ext = extensionFromMime(file.type || '');
+  return new File([file], `clipboard-${Date.now()}-${index + 1}.${ext}`, {
+    type: file.type,
+    lastModified: file.lastModified || Date.now(),
+  });
+}
+
+/** Files / images from a paste or drop DataTransfer (deduped). */
+export function extractClipboardFiles(
+  data: DataTransfer | null | undefined,
+): File[] {
+  if (!data) return [];
+
+  const fromItems: File[] = [];
+  for (const item of Array.from(data.items || [])) {
+    if (item.kind !== 'file') continue;
+    const file = item.getAsFile();
+    if (file) fromItems.push(normalizePasteFile(file, fromItems.length));
+  }
+  if (fromItems.length) return fromItems;
+
+  return Array.from(data.files || []).map((file, index) =>
+    normalizePasteFile(file, index),
+  );
+}
+
 export function FileDropZone({
   onFiles,
   disabled,
@@ -73,6 +115,14 @@ export function FileDropZone({
               }
             }
       }
+      onPaste={(e) => {
+        if (disabled) return;
+        const files = extractClipboardFiles(e.clipboardData);
+        if (!files.length) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onFiles(files);
+      }}
       role={disableClickOpen ? undefined : 'button'}
       tabIndex={disableClickOpen || disabled ? -1 : 0}
       onDragEnter={(e) => {

@@ -482,6 +482,25 @@ class TaskController extends Controller
         ]);
     }
 
+    public function deleteAttachment(Request $request, int $id): JsonResponse
+    {
+        if ($resp = $this->forbidWrite($this->user($request))) {
+            return $resp;
+        }
+
+        $attachment = Attachment::query()->find($id);
+        if (! $attachment) {
+            return response()->json(['error' => 'Файл не найден'], 404);
+        }
+
+        if ($this->files->exists($attachment->key)) {
+            $this->files->delete($attachment->key);
+        }
+        $attachment->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
     public function uploadTaskFiles(Request $request, int $id): JsonResponse
     {
         if ($resp = $this->forbidWrite($this->user($request))) {
