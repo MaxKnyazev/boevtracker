@@ -37,6 +37,7 @@ export type ProjectStatus = {
   name: string;
   order: number;
   projectId: number;
+  locked?: boolean;
 };
 
 export type TaskStatusHistory = {
@@ -90,7 +91,11 @@ export type Project = {
   order?: number;
   statuses: ProjectStatus[];
   tasks?: Task[];
-  _count?: { tasks: number };
+  _count?: {
+    tasks?: number;
+    openTasks?: number;
+    inProgressTasks?: number;
+  };
   board?: { id: number; name: string };
 };
 
@@ -100,7 +105,11 @@ export type Board = {
   createdAt: string;
   createdBy?: PublicUser;
   projects?: Project[];
-  _count?: { projects: number };
+  _count?: {
+    projects: number;
+    openTasks?: number;
+    inProgressTasks?: number;
+  };
 };
 
 async function request<T>(

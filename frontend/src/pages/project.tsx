@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, FileIcon, GripVertical, Plus, Settings2, UploadCloud, X } from 'lucide-react';
+import { ArrowLeft, FileIcon, GripVertical, Lock, Plus, Settings2, UploadCloud, X } from 'lucide-react';
 import {
   DndContext,
   DragOverlay,
@@ -53,6 +53,40 @@ import {
   applyTaskView,
   type TaskViewState,
 } from '@/lib/task-view';
+import {
+  computeTaskBuckets,
+  type TaskBucketCounts,
+} from '@/lib/task-buckets';
+
+const OPEN_STATUS_NAME = 'Открыта';
+const CLOSED_STATUS_NAME = 'Закрыта';
+
+function isStatusLocked(status: ProjectStatus): boolean {
+  return (
+    status.locked === true ||
+    status.name === OPEN_STATUS_NAME ||
+    status.name === CLOSED_STATUS_NAME
+  );
+}
+
+function isClosedStatus(status: ProjectStatus): boolean {
+  return status.name === CLOSED_STATUS_NAME;
+}
+
+/** Keep «Закрыта» at the end. */
+function normalizeStatusOrder(statuses: ProjectStatus[]): ProjectStatus[] {
+  const closed = statuses.filter(isClosedStatus);
+  const rest = statuses.filter((s) => !isClosedStatus(s));
+  return [...rest, ...closed].map((s, order) => ({ ...s, order }));
+}
+
+function isValidStatusOrder(statuses: ProjectStatus[]): boolean {
+  const openIndex = statuses.findIndex((s) => s.name === OPEN_STATUS_NAME);
+  const closedIndex = statuses.findIndex((s) => s.name === CLOSED_STATUS_NAME);
+  if (closedIndex >= 0 && closedIndex !== statuses.length - 1) return false;
+  if (openIndex < 0 || closedIndex < 0) return true;
+  return openIndex < closedIndex;
+}
 
 type Columns = Record<string, string[]>;
 
@@ -136,6 +170,7 @@ export function ProjectPage({
   onTaskViewChange,
   showTaskViewControls = true,
   filterUsers,
+  onTasksChanged,
 }: {
   projectId?: number;
   embedded?: boolean;
@@ -148,6 +183,8 @@ export function ProjectPage({
   showTaskViewControls?: boolean;
   /** Users for assignee filter when controls are shown without local load yet. */
   filterUsers?: User[];
+  /** Fires when open / in-progress counts may have changed. */
+  onTasksChanged?: (projectId: number, counts: TaskBucketCounts) => void;
 } = {}) {
   const params = useParams();
   const projectId = String(projectIdProp ?? params.projectId);
@@ -190,6 +227,13 @@ export function ProjectPage({
     }),
   );
 
+  const reportBuckets = useCallback(
+    (p: Project) => {
+      onTasksChanged?.(Number(projectId), computeTaskBuckets(p));
+    },
+    [onTasksChanged, projectId],
+  );
+
   const load = async () => {
     try {
       const [proj, assignable, boardList] = await Promise.all([
@@ -201,6 +245,7 @@ export function ProjectPage({
       setColumns(buildColumns(proj.project));
       setUsers(assignable.users);
       setBoards(boardList.boards);
+      reportBuckets(proj.project);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки');
@@ -263,10 +308,12 @@ export function ProjectPage({
           const order = orderedTaskKeys.indexOf(taskKey(t.id));
           return order >= 0 ? { ...t, order } : t;
         });
-        return { ...prev, tasks };
+        const next = { ...prev, tasks };
+        reportBuckets(next);
+        return next;
       });
     },
-    [],
+    [reportBuckets],
   );
 
   const onDragStart = (event: DragStartEvent) => {
@@ -511,6 +558,11 @@ export function ProjectPage({
     const { active, over } = event;
     if (!over || !project || !writable || active.id === over.id) return;
 
+    const activeStatus = statusDraft.find(
+      (s) => String(s.id) === String(active.id),
+    );
+    if (activeStatus && isClosedStatus(activeStatus)) return;
+
     const oldIndex = statusDraft.findIndex(
       (s) => String(s.id) === String(active.id),
     );
@@ -519,10 +571,14 @@ export function ProjectPage({
     );
     if (oldIndex < 0 || newIndex < 0) return;
 
-    const next = arrayMove(statusDraft, oldIndex, newIndex).map((s, order) => ({
-      ...s,
-      order,
-    }));
+    const next = normalizeStatusOrder(
+      arrayMove(statusDraft, oldIndex, newIndex),
+    );
+    if (!isValidStatusOrder(next)) {
+      alert('Статус «Открыта» не может стоять после «Закрыта»');
+      if (project) setStatusDraft([...project.statuses]);
+      return;
+    }
     setStatusDraft(next);
     setProject({ ...project, statuses: next });
 
@@ -848,7 +904,7 @@ export function ProjectPage({
         onOpenChange={(open) => {
           setStatusOpen(open);
           if (open && project) {
-            setStatusDraft([...project.statuses]);
+            setStatusDraft(normalizeStatusOrder([...project.statuses]));
             setActiveStatusId(null);
           }
         }}
@@ -929,6 +985,8 @@ function SortableStatusRow({
   isDragging: boolean;
   onDelete: () => void;
 }) {
+  const locked = isStatusLocked(status);
+  const closed = isClosedStatus(status);
   const {
     attributes,
     listeners,
@@ -937,7 +995,7 @@ function SortableStatusRow({
     transition,
   } = useSortable({
     id: String(status.id),
-    disabled: !writable,
+    disabled: !writable || closed,
   });
 
   const style: CSSProperties = {
@@ -952,7 +1010,7 @@ function SortableStatusRow({
       style={style}
       className="flex touch-none items-center justify-between gap-2 rounded-md border border-border bg-background/80 px-2 py-2 text-sm"
     >
-      {writable ? (
+      {writable && !closed ? (
         <button
           type="button"
           className="cursor-grab touch-none rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground active:cursor-grabbing"
@@ -962,18 +1020,32 @@ function SortableStatusRow({
         >
           <GripVertical className="h-4 w-4" />
         </button>
+      ) : writable && closed ? (
+        <span className="inline-flex h-8 w-8 shrink-0" aria-hidden />
       ) : null}
       <span className="min-w-0 flex-1 truncate">{status.name}</span>
-      {writable && (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="shrink-0 text-destructive"
-          onClick={onDelete}
-        >
-          Удалить
-        </Button>
-      )}
+      {writable &&
+        (locked ? (
+          <span
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground"
+            title={
+              closed
+                ? 'Системный статус — всегда последний, нельзя удалить'
+                : 'Системный статус — нельзя удалить'
+            }
+          >
+            <Lock className="h-4 w-4" />
+          </span>
+        ) : (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="shrink-0 text-destructive"
+            onClick={onDelete}
+          >
+            Удалить
+          </Button>
+        ))}
     </div>
   );
 }

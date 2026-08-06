@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ListTodo } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, ListTodo } from 'lucide-react';
 import { api, type Project, type Task, type User } from '@/lib/api';
 import { canWrite, useAuthStore } from '@/store/auth';
 import { EmptyState, PageHeader } from '@/components/layout';
@@ -15,6 +15,7 @@ import {
 import {
   DEFAULT_TASK_VIEW,
   applyTaskView,
+  type TaskSortField,
   type TaskViewState,
 } from '@/lib/task-view';
 import { PRIORITY_LABELS, formatDate, formatDuration, cn } from '@/lib/utils';
@@ -26,9 +27,6 @@ const priorityColor: Record<string, string> = {
   CRITICAL: 'border-red-500/40 text-red-700 dark:text-red-300',
 };
 
-const selectClass =
-  'h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-
 export function TasksPage() {
   const user = useAuthStore((s) => s.user);
   const writable = canWrite(user?.role);
@@ -36,8 +34,6 @@ export function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [view, setView] = useState<TaskViewState>(DEFAULT_TASK_VIEW);
-  const [boardFilter, setBoardFilter] = useState('all');
-  const [projectFilter, setProjectFilter] = useState('all');
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [error, setError] = useState('');
@@ -64,23 +60,26 @@ export function TasksPage() {
     void load();
   }, []);
 
-  const boards = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const task of tasks) {
-      const board = task.project?.board;
-      if (board) map.set(board.id, board.name);
-    }
-    return [...map.entries()]
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  }, [tasks]);
+  const boards = useMemo(
+    () => {
+      const map = new Map<number, string>();
+      for (const task of tasks) {
+        const board = task.project?.board;
+        if (board) map.set(board.id, board.name);
+      }
+      return [...map.entries()]
+        .map(([id, name]) => ({ value: String(id), label: name }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+    },
+    [tasks],
+  );
 
   const projects = useMemo(() => {
     const map = new Map<number, { id: number; name: string; boardId: number }>();
     for (const task of tasks) {
       const project = task.project;
       if (!project) continue;
-      if (boardFilter !== 'all' && String(project.boardId) !== boardFilter) {
+      if (view.board !== 'all' && String(project.boardId) !== view.board) {
         continue;
       }
       map.set(project.id, {
@@ -89,32 +88,24 @@ export function TasksPage() {
         boardId: project.boardId,
       });
     }
-    return [...map.values()].sort((a, b) =>
-      a.name.localeCompare(b.name, 'ru'),
-    );
-  }, [tasks, boardFilter]);
+    return [...map.values()]
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+      .map((p) => ({ value: String(p.id), label: p.name }));
+  }, [tasks, view.board]);
 
   useEffect(() => {
     if (
-      projectFilter !== 'all' &&
-      !projects.some((p) => String(p.id) === projectFilter)
+      view.project !== 'all' &&
+      !projects.some((p) => p.value === view.project)
     ) {
-      setProjectFilter('all');
+      setView((prev) => ({ ...prev, project: 'all' }));
     }
-  }, [projects, projectFilter]);
+  }, [projects, view.project]);
 
-  const visibleTasks = useMemo(() => {
-    let list = tasks;
-    if (boardFilter !== 'all') {
-      list = list.filter(
-        (t) => String(t.project?.boardId) === boardFilter,
-      );
-    }
-    if (projectFilter !== 'all') {
-      list = list.filter((t) => String(t.projectId) === projectFilter);
-    }
-    return applyTaskView(list, view);
-  }, [tasks, boardFilter, projectFilter, view]);
+  const visibleTasks = useMemo(
+    () => applyTaskView(tasks, view),
+    [tasks, view],
+  );
 
   const openTask = async (task: Task) => {
     setSelectedTaskId(task.id);
@@ -126,6 +117,18 @@ export function TasksPage() {
     }
   };
 
+  const cycleSort = (field: Exclude<TaskSortField, 'order'>) => {
+    setView((prev) => {
+      if (prev.sortField !== field) {
+        return { ...prev, sortField: field, sortDir: 'asc' };
+      }
+      if (prev.sortDir === 'asc') {
+        return { ...prev, sortDir: 'desc' };
+      }
+      return { ...prev, sortField: 'order', sortDir: 'asc' };
+    });
+  };
+
   return (
     <div>
       <PageHeader
@@ -135,46 +138,13 @@ export function TasksPage() {
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="shrink-0">Доска</span>
-          <select
-            className={selectClass}
-            value={boardFilter}
-            onChange={(e) => {
-              setBoardFilter(e.target.value);
-              setProjectFilter('all');
-            }}
-          >
-            <option value="all">Все</option>
-            {boards.map((b) => (
-              <option key={b.id} value={String(b.id)}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="shrink-0">Проект</span>
-          <select
-            className={selectClass}
-            value={projectFilter}
-            onChange={(e) => setProjectFilter(e.target.value)}
-          >
-            <option value="all">Все</option>
-            {projects.map((p) => (
-              <option key={p.id} value={String(p.id)}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
       <TaskViewControls
         view={view}
         onChange={setView}
         users={users}
+        boards={boards}
+        projects={projects}
+        showSort={false}
         className="mb-4"
       />
 
@@ -195,14 +165,54 @@ export function TasksPage() {
           <table className="w-full min-w-[960px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/30 text-left text-xs text-muted-foreground">
-                <th className="px-3 py-2.5 font-medium">Задача</th>
-                <th className="px-3 py-2.5 font-medium">Доска</th>
-                <th className="px-3 py-2.5 font-medium">Проект</th>
-                <th className="px-3 py-2.5 font-medium">Статус</th>
-                <th className="px-3 py-2.5 font-medium">Приоритет</th>
-                <th className="px-3 py-2.5 font-medium">Исполнитель</th>
-                <th className="px-3 py-2.5 font-medium">Дедлайн</th>
-                <th className="px-3 py-2.5 font-medium">В статусе</th>
+                <SortableTh
+                  label="Задача"
+                  field="title"
+                  view={view}
+                  onCycle={cycleSort}
+                />
+                <SortableTh
+                  label="Доска"
+                  field="board"
+                  view={view}
+                  onCycle={cycleSort}
+                />
+                <SortableTh
+                  label="Проект"
+                  field="project"
+                  view={view}
+                  onCycle={cycleSort}
+                />
+                <SortableTh
+                  label="Статус"
+                  field="status"
+                  view={view}
+                  onCycle={cycleSort}
+                />
+                <SortableTh
+                  label="Приоритет"
+                  field="priority"
+                  view={view}
+                  onCycle={cycleSort}
+                />
+                <SortableTh
+                  label="Исполнитель"
+                  field="assignee"
+                  view={view}
+                  onCycle={cycleSort}
+                />
+                <SortableTh
+                  label="Дедлайн"
+                  field="deadline"
+                  view={view}
+                  onCycle={cycleSort}
+                />
+                <SortableTh
+                  label="В статусе"
+                  field="statusTime"
+                  view={view}
+                  onCycle={cycleSort}
+                />
               </tr>
             </thead>
             <tbody>
@@ -298,5 +308,53 @@ export function TasksPage() {
         />
       )}
     </div>
+  );
+}
+
+function SortableTh({
+  label,
+  field,
+  view,
+  onCycle,
+}: {
+  label: string;
+  field: Exclude<TaskSortField, 'order'>;
+  view: TaskViewState;
+  onCycle: (field: Exclude<TaskSortField, 'order'>) => void;
+}) {
+  const active = view.sortField === field;
+  const Icon = !active
+    ? ArrowUpDown
+    : view.sortDir === 'asc'
+      ? ArrowUp
+      : ArrowDown;
+
+  return (
+    <th className="px-3 py-2.5 font-medium">
+      <button
+        type="button"
+        className={cn(
+          'inline-flex items-center gap-1 rounded-sm transition-colors hover:text-foreground',
+          active ? 'text-foreground' : 'text-muted-foreground',
+        )}
+        onClick={() => onCycle(field)}
+        title={
+          !active
+            ? 'По умолчанию'
+            : view.sortDir === 'asc'
+              ? 'По возрастанию'
+              : 'По убыванию'
+        }
+      >
+        <span>{label}</span>
+        <Icon
+          className={cn(
+            'h-3.5 w-3.5 shrink-0',
+            active ? 'opacity-90' : 'opacity-45',
+          )}
+          aria-hidden
+        />
+      </button>
+    </th>
   );
 }

@@ -160,9 +160,14 @@ class ProjectController extends Controller
             return response()->json(['error' => 'Только администратор может удалять проекты'], 403);
         }
 
-        $project = Project::query()->find($id);
+        $project = Project::query()->withCount('tasks')->find($id);
         if (! $project) {
             return response()->json(['error' => 'Проект не найден'], 404);
+        }
+        if ($project->tasks_count > 0) {
+            return response()->json([
+                'error' => 'Нельзя удалить проект с задачами. Сначала удалите или перенесите задачи.',
+            ], 400);
         }
 
         $project->delete();

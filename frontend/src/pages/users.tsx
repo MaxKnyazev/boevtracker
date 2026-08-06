@@ -3,8 +3,16 @@ import { api, type Role, type User } from '@/lib/api';
 import { PageHeader, EmptyState } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { AppSelect } from '@/components/ui/select';
 import { ROLE_LABELS } from '@/lib/utils';
 import { UserAvatar, displayName } from '@/components/user-avatar';
+
+const ROLE_OPTIONS: { value: Role; label: string }[] = [
+  { value: 'ADMIN', label: ROLE_LABELS.ADMIN },
+  { value: 'DEVELOPER', label: ROLE_LABELS.DEVELOPER },
+  { value: 'READER', label: ROLE_LABELS.READER },
+  { value: 'PENDING', label: ROLE_LABELS.PENDING },
+];
 
 export function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -61,18 +69,32 @@ export function UsersPage() {
           <section>
             <h2 className="mb-3 text-lg font-medium">Ожидают подтверждения</h2>
             {pending.length === 0 ? (
-              <EmptyState title="Нет заявок" description="Новые регистрации появятся здесь" />
+              <EmptyState
+                title="Нет заявок"
+                description="Новые регистрации появятся здесь"
+              />
             ) : (
               <div className="space-y-3">
                 {pending.map((u) => (
                   <UserRow key={u.id} user={u}>
-                    <Button size="sm" onClick={() => approve(u.id, 'DEVELOPER')}>
+                    <Button
+                      size="sm"
+                      onClick={() => approve(u.id, 'DEVELOPER')}
+                    >
                       Подтвердить как разработчик
                     </Button>
-                    <Button size="sm" variant="secondary" onClick={() => approve(u.id, 'READER')}>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => approve(u.id, 'READER')}
+                    >
                       Как читатель
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => reject(u.id)}>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => reject(u.id)}
+                    >
                       Отклонить
                     </Button>
                   </UserRow>
@@ -86,7 +108,10 @@ export function UsersPage() {
             <div className="space-y-3">
               {active.map((u) => (
                 <UserRow key={u.id} user={u}>
-                  <RoleSelect value={u.role} onChange={(role) => changeRole(u.id, role)} />
+                  <RoleSelect
+                    value={u.role}
+                    onChange={(role) => changeRole(u.id, role)}
+                  />
                 </UserRow>
               ))}
             </div>
@@ -97,7 +122,13 @@ export function UsersPage() {
   );
 }
 
-function UserRow({ user, children }: { user: User; children: React.ReactNode }) {
+function UserRow({
+  user,
+  children,
+}: {
+  user: User;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
       <div className="flex items-center gap-3">
@@ -124,15 +155,11 @@ function RoleSelect({
   onChange: (role: Role) => void;
 }) {
   return (
-    <select
-      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+    <AppSelect
       value={value}
-      onChange={(e) => onChange(e.target.value as Role)}
-    >
-      <option value="ADMIN">Администратор</option>
-      <option value="DEVELOPER">Разработчик</option>
-      <option value="READER">Читатель</option>
-      <option value="PENDING">Ожидание</option>
-    </select>
+      onValueChange={(v) => onChange(v as Role)}
+      options={ROLE_OPTIONS}
+      className="w-[11rem] text-xs"
+    />
   );
 }

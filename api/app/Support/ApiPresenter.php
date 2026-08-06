@@ -50,6 +50,7 @@ class ApiPresenter
             'name' => $status->name,
             'order' => $status->order,
             'projectId' => $status->project_id,
+            'locked' => Constants::isProtectedStatusName($status->name),
             'createdAt' => self::date($status->created_at),
         ];
     }
@@ -174,12 +175,19 @@ class ApiPresenter
             ];
         }
 
-        if (isset($project->tasks_count) || $project->relationLoaded('tasks')) {
-            $data['_count'] = [
-                'tasks' => isset($project->tasks_count)
+        if (isset($project->tasks_count) || $project->relationLoaded('tasks') || isset($project->open_tasks_count) || isset($project->in_progress_tasks_count)) {
+            $data['_count'] = [];
+            if (isset($project->tasks_count) || $project->relationLoaded('tasks')) {
+                $data['_count']['tasks'] = isset($project->tasks_count)
                     ? (int) $project->tasks_count
-                    : $project->tasks->count(),
-            ];
+                    : $project->tasks->count();
+            }
+            if (isset($project->open_tasks_count)) {
+                $data['_count']['openTasks'] = (int) $project->open_tasks_count;
+            }
+            if (isset($project->in_progress_tasks_count)) {
+                $data['_count']['inProgressTasks'] = (int) $project->in_progress_tasks_count;
+            }
         }
 
         if ($withTasks && $project->relationLoaded('tasks')) {
@@ -198,7 +206,7 @@ class ApiPresenter
         return $data;
     }
 
-    public static function board(Board $board, bool $withProjects = false): array
+    public static function board(Board $board, bool $withProjects = false, ?array $taskCounts = null): array
     {
         $data = [
             'id' => $board->id,
@@ -209,8 +217,16 @@ class ApiPresenter
             'createdBy' => self::publicUser($board->createdBy),
         ];
 
+        $count = [];
         if (isset($board->projects_count)) {
-            $data['_count'] = ['projects' => (int) $board->projects_count];
+            $count['projects'] = (int) $board->projects_count;
+        }
+        if ($taskCounts !== null) {
+            $count['openTasks'] = (int) ($taskCounts['openTasks'] ?? 0);
+            $count['inProgressTasks'] = (int) ($taskCounts['inProgressTasks'] ?? 0);
+        }
+        if ($count !== []) {
+            $data['_count'] = $count;
         }
 
         if ($withProjects && $board->relationLoaded('projects')) {

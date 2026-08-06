@@ -3,6 +3,10 @@ import { displayName } from '@/components/user-avatar';
 
 export type TaskSortField =
   | 'order'
+  | 'title'
+  | 'board'
+  | 'project'
+  | 'status'
   | 'priority'
   | 'deadline'
   | 'statusTime'
@@ -22,6 +26,10 @@ export type StatusTimeFilter = 'all' | '1d' | '3d' | '7d' | '30d';
 export type TaskViewState = {
   sortField: TaskSortField;
   sortDir: TaskSortDir;
+  /** 'all' | board id as string */
+  board: string;
+  /** 'all' | project id as string */
+  project: string;
   priority: string; // 'all' | Priority
   deadline: DeadlineFilter;
   statusTime: StatusTimeFilter;
@@ -32,6 +40,8 @@ export type TaskViewState = {
 export const DEFAULT_TASK_VIEW: TaskViewState = {
   sortField: 'order',
   sortDir: 'asc',
+  board: 'all',
+  project: 'all',
   priority: 'all',
   deadline: 'all',
   statusTime: 'all',
@@ -50,6 +60,8 @@ const DAY_MS = 86_400_000;
 export function hasActiveTaskView(view: TaskViewState): boolean {
   return (
     view.sortField !== 'order' ||
+    view.board !== 'all' ||
+    view.project !== 'all' ||
     view.priority !== 'all' ||
     view.deadline !== 'all' ||
     view.statusTime !== 'all' ||
@@ -93,6 +105,15 @@ function matchesAssignee(task: Task, filter: string): boolean {
 
 export function filterTasks(tasks: Task[], view: TaskViewState): Task[] {
   return tasks.filter((task) => {
+    if (
+      view.board !== 'all' &&
+      String(task.project?.boardId) !== view.board
+    ) {
+      return false;
+    }
+    if (view.project !== 'all' && String(task.projectId) !== view.project) {
+      return false;
+    }
     if (view.priority !== 'all' && task.priority !== view.priority) return false;
     if (!matchesDeadline(task, view.deadline)) return false;
     if (!matchesStatusTime(task, view.statusTime)) return false;
@@ -124,6 +145,29 @@ export function sortTasks(tasks: Task[], view: TaskViewState): Task[] {
   return [...tasks].sort((a, b) => {
     let cmp = 0;
     switch (sortField) {
+      case 'title': {
+        cmp = a.title.localeCompare(b.title, 'ru');
+        if (sortDir === 'desc') cmp = -cmp;
+        break;
+      }
+      case 'board': {
+        const na = a.project?.board?.name ?? '';
+        const nb = b.project?.board?.name ?? '';
+        cmp = compareNullableString(na, nb, sortDir);
+        break;
+      }
+      case 'project': {
+        const na = a.project?.name ?? '';
+        const nb = b.project?.name ?? '';
+        cmp = compareNullableString(na, nb, sortDir);
+        break;
+      }
+      case 'status': {
+        const na = a.status?.name ?? '';
+        const nb = b.status?.name ?? '';
+        cmp = compareNullableString(na, nb, sortDir);
+        break;
+      }
       case 'priority': {
         const pa = PRIORITY_RANK[a.priority] ?? 99;
         const pb = PRIORITY_RANK[b.priority] ?? 99;
@@ -146,13 +190,7 @@ export function sortTasks(tasks: Task[], view: TaskViewState): Task[] {
       case 'assignee': {
         const na = a.assignee ? displayName(a.assignee) : '';
         const nb = b.assignee ? displayName(b.assignee) : '';
-        if (!na && !nb) cmp = 0;
-        else if (!na) cmp = 1;
-        else if (!nb) cmp = -1;
-        else {
-          cmp = na.localeCompare(nb, 'ru');
-          if (sortDir === 'desc') cmp = -cmp;
-        }
+        cmp = compareNullableString(na, nb, sortDir);
         break;
       }
       default:
@@ -162,11 +200,23 @@ export function sortTasks(tasks: Task[], view: TaskViewState): Task[] {
   });
 }
 
+function compareNullableString(
+  a: string,
+  b: string,
+  dir: TaskSortDir,
+): number {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  const cmp = a.localeCompare(b, 'ru');
+  return dir === 'desc' ? -cmp : cmp;
+}
+
 export function applyTaskView(tasks: Task[], view: TaskViewState): Task[] {
   return sortTasks(filterTasks(tasks, view), view);
 }
 
 export type TaskViewUser = Pick<
   User,
-  'id' | 'firstName' | 'lastName' | 'username'
+  'id' | 'firstName' | 'lastName' | 'username' | 'avatarColor'
 >;
