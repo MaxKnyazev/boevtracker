@@ -161,7 +161,7 @@ export function TaskCard({
         if (!preview && !isDragging) onOpen?.();
       }}
       className={cn(
-        'relative w-full rounded-lg border border-border bg-background/80 p-3 text-left touch-none',
+        'relative w-full overflow-hidden rounded-lg border border-border bg-background/80 p-3 text-left touch-none',
         preview
           ? 'cursor-grabbing shadow-2xl ring-2 ring-primary/40'
           : 'cursor-grab hover:border-primary/60 hover:bg-accent/30 active:cursor-grabbing',
@@ -169,7 +169,10 @@ export function TaskCard({
       )}
     >
       <div className="mb-2 flex items-start justify-between gap-2">
-        <div className="min-w-0 truncate text-sm font-semibold leading-snug" title={task.title}>
+        <div
+          className="min-w-0 flex-1 truncate text-sm font-semibold leading-snug"
+          title={task.title}
+        >
           {task.title}
         </div>
         <div className="relative shrink-0 leading-none">
@@ -213,7 +216,10 @@ export function TaskCard({
         </Badge>
       </div>
 
-      <div className="mb-2 text-xs leading-relaxed text-muted-foreground">
+      <div
+        className="mb-2 min-w-0 truncate text-xs leading-relaxed text-muted-foreground"
+        title={task.description?.trim() || undefined}
+      >
         {truncate(task.description)}
       </div>
 

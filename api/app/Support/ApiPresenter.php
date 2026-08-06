@@ -73,10 +73,26 @@ class ApiPresenter
 
     public static function comment(Comment $comment): array
     {
+        $reply = null;
+        if ($comment->relationLoaded('replyTo') && $comment->replyTo) {
+            $target = $comment->replyTo;
+            $reply = [
+                'id' => $target->id,
+                'body' => $target->body,
+                'author' => self::publicUser($target->author),
+                'hasFiles' => $target->relationLoaded('files')
+                    ? $target->files->isNotEmpty()
+                    : $target->files()->exists(),
+            ];
+        }
+
         return [
             'id' => $comment->id,
             'body' => $comment->body,
             'createdAt' => self::date($comment->created_at),
+            'editedAt' => self::date($comment->edited_at),
+            'replyToId' => $comment->reply_to_id,
+            'replyTo' => $reply,
             'author' => self::publicUser($comment->author),
             'files' => $comment->relationLoaded('files')
                 ? $comment->files->map(fn ($f) => self::attachment($f))->values()->all()

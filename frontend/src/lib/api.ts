@@ -76,10 +76,20 @@ export type Task = {
   _count?: { comments: number };
 };
 
+export type CommentReplyTo = {
+  id: number;
+  body: string;
+  author: PublicUser;
+  hasFiles: boolean;
+};
+
 export type Comment = {
   id: number;
   body: string;
   createdAt: string;
+  editedAt?: string | null;
+  replyToId?: number | null;
+  replyTo?: CommentReplyTo | null;
   author: PublicUser;
   files: Attachment[];
 };
@@ -261,11 +271,24 @@ export const api = {
     }),
   deleteTask: (id: number) =>
     request<{ ok: boolean }>(`/api/tasks/${id}`, { method: 'DELETE' }),
-  addComment: (taskId: number, body: string) =>
+  addComment: (taskId: number, body: string, replyToId?: number | null) =>
     request<{ comment: Comment }>(`/api/tasks/${taskId}/comments`, {
       method: 'POST',
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({
+        body,
+        ...(replyToId != null ? { replyToId } : {}),
+      }),
     }),
+  updateComment: (id: number, body: string) =>
+    request<{ comment?: Comment; ok?: boolean; deleted?: boolean }>(
+      `/api/comments/${id}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ body }),
+      },
+    ),
+  deleteComment: (id: number) =>
+    request<{ ok: boolean }>(`/api/comments/${id}`, { method: 'DELETE' }),
   uploadTaskFile: (taskId: number, file: File) => {
     const form = new FormData();
     form.append('file', file);
@@ -301,5 +324,8 @@ export const api = {
   attachmentUrl: (id: number, download = false) =>
     `${API_URL}/api/attachments/${id}${download ? '?download=1' : ''}`,
   deleteAttachment: (id: number) =>
-    request<{ ok: boolean }>(`/api/attachments/${id}`, { method: 'DELETE' }),
+    request<{ ok: boolean; commentDeleted?: boolean }>(
+      `/api/attachments/${id}`,
+      { method: 'DELETE' },
+    ),
 };

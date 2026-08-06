@@ -52,6 +52,8 @@ Route::middleware(AuthenticateJwt::class)->group(function () {
     Route::post('/tasks/{id}/move-board', [TaskController::class, 'moveBoard'])->whereNumber('id');
     Route::delete('/tasks/{id}', [TaskController::class, 'destroy'])->whereNumber('id');
     Route::post('/tasks/{id}/comments', [TaskController::class, 'addComment'])->whereNumber('id');
+    Route::patch('/comments/{id}', [TaskController::class, 'updateComment'])->whereNumber('id');
+    Route::delete('/comments/{id}', [TaskController::class, 'deleteComment'])->whereNumber('id');
     Route::post('/tasks/{id}/files', [TaskController::class, 'uploadTaskFiles'])->whereNumber('id');
 
     Route::post('/comments/{id}/files', [TaskController::class, 'uploadCommentFiles'])->whereNumber('id');
