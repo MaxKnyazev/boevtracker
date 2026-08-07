@@ -35,7 +35,7 @@ class Constants
         '#84CC16', '#0EA5E9', '#A855F7', '#10B981',
     ];
 
-    public const MAX_FILE_SIZE = 100 * 1024 * 1024;
+    public const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
     public const COOKIE_NAME = 'bt_token';
 }
