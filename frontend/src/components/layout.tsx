@@ -16,6 +16,7 @@ import { NotificationWatcher } from '@/components/notification-watcher';
 import { UploadProgressDock } from '@/components/upload-progress-dock';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { UploadProgressDock } from '@/components/upload-progress-dock';
 import { ROLE_LABELS, cn } from '@/lib/utils';
 import { UserAvatar, displayName } from '@/components/user-avatar';
 
