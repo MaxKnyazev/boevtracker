@@ -94,6 +94,21 @@ export type Comment = {
   files: Attachment[];
 };
 
+export type AppNotificationType = 'mention' | 'reply' | 'assignee';
+
+export type AppNotification = {
+  id: number;
+  type: AppNotificationType;
+  title: string;
+  body?: string | null;
+  taskId?: number | null;
+  taskTitle?: string | null;
+  commentId?: number | null;
+  readAt?: string | null;
+  createdAt: string;
+  actor?: PublicUser | null;
+};
+
 export type Project = {
   id: number;
   name: string;
@@ -259,7 +274,7 @@ async function uploadFilesSequential<T>(
       throw new UploadAbortedError();
     }
 
-    const file = files[i];
+    const file = files[i]!;
     const form = new FormData();
     form.append('file', file);
 
@@ -267,7 +282,7 @@ async function uploadFilesSequential<T>(
       path,
       form,
       (filePercent) => {
-        const loadedForFile = (filePercent / 100) * sizes[i];
+        const loadedForFile = (filePercent / 100) * sizes[i]!;
         const overallPercent = Math.min(
           100,
           Math.round(((completedBytes + loadedForFile) / totalBytes) * 100),
@@ -283,7 +298,7 @@ async function uploadFilesSequential<T>(
       signal,
     );
 
-    completedBytes += sizes[i];
+    completedBytes += sizes[i]!;
     onProgress?.({
       fileIndex: i,
       filePercent: 100,
@@ -492,4 +507,51 @@ export const api = {
       `/api/attachments/${id}`,
       { method: 'DELETE' },
     ),
+
+  notifications: (sinceId?: number) =>
+    request<{ notifications: AppNotification[]; unreadCount: number }>(
+      `/api/notifications${sinceId != null ? `?sinceId=${sinceId}` : ''}`,
+    ),
+  notificationsUnreadCount: () =>
+    request<{ unreadCount: number }>('/api/notifications/unread-count'),
+  markNotificationRead: (id: number) =>
+    request<{ notification: AppNotification }>(`/api/notifications/${id}/read`, {
+      method: 'POST',
+    }),
+  markAllNotificationsRead: () =>
+    request<{ ok: boolean }>('/api/notifications/read-all', { method: 'POST' }),
+
+  realtimeConfig: () =>
+    request<{
+      driver: 'pusher' | 'poll';
+      pollIntervalMs: number | null;
+      pusher: { key: string; cluster: string } | null;
+    }>('/api/realtime/config'),
+
+  realtimePoll: (
+    params: {
+      afterNotificationId?: number;
+      taskId?: number | null;
+      taskVersion?: string;
+    },
+    signal?: AbortSignal,
+  ) => {
+    const q = new URLSearchParams();
+    if (params.afterNotificationId != null) {
+      q.set('afterNotificationId', String(params.afterNotificationId));
+    }
+    if (params.taskId != null) {
+      q.set('taskId', String(params.taskId));
+    }
+    if (params.taskVersion) {
+      q.set('taskVersion', params.taskVersion);
+    }
+    return request<{
+      notifications: AppNotification[];
+      unreadCount: number;
+      afterNotificationId: number;
+      task: Task | null;
+      taskVersion: string | null;
+    }>(`/api/realtime/poll?${q.toString()}`, { signal });
+  },
 };

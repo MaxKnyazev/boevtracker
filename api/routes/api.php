@@ -2,7 +2,10 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
+use App\Http\Controllers\BroadcastAuthController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\RealtimeController;
 use App\Http\Controllers\StatusController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\UserController;
@@ -19,6 +22,15 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::middleware(AuthenticateJwt::class)->group(function () {
+    Route::get('/realtime/config', [RealtimeController::class, 'config']);
+    Route::get('/realtime/poll', [RealtimeController::class, 'poll']);
+    Route::post('/broadcasting/auth', [BroadcastAuthController::class, 'auth']);
+
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead'])->whereNumber('id');
+
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/users/assignable', [UserController::class, 'assignable']);
     Route::patch('/users/{id}/role', [UserController::class, 'setRole'])->whereNumber('id');

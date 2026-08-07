@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Attachment;
 use App\Models\Board;
 use App\Models\Comment;
+use App\Models\Notification;
 use App\Models\Project;
 use App\Models\ProjectStatus;
 use App\Models\Task;
@@ -68,6 +69,26 @@ class ApiPresenter
             'taskId' => $file->task_id,
             'commentId' => $file->comment_id,
             'createdAt' => self::date($file->created_at),
+        ];
+    }
+
+    public static function notification(Notification $notification): array
+    {
+        return [
+            'id' => $notification->id,
+            'type' => $notification->type,
+            'title' => $notification->title,
+            'body' => $notification->body,
+            'taskId' => $notification->task_id,
+            'taskTitle' => $notification->relationLoaded('task') && $notification->task
+                ? $notification->task->title
+                : null,
+            'commentId' => $notification->comment_id,
+            'readAt' => self::date($notification->read_at),
+            'createdAt' => self::date($notification->created_at),
+            'actor' => self::publicUser(
+                $notification->relationLoaded('actor') ? $notification->actor : null
+            ),
         ];
     }
 

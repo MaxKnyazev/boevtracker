@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\TaskUpdated;
 use App\Models\Attachment;
 use App\Models\Comment;
 use App\Models\Project;
@@ -10,7 +11,9 @@ use App\Models\Task;
 use App\Models\TaskStatusHistory;
 use App\Models\User;
 use App\Services\FileStorage;
+use App\Services\NotificationService;
 use App\Support\ApiPresenter;
+use App\Support\Broadcasting;
 use App\Support\Constants;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,7 +23,21 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class TaskController extends Controller
 {
-    public function __construct(private FileStorage $files) {}
+    public function __construct(
+        private FileStorage $files,
+        private NotificationService $notifications,
+    ) {}
+
+    private function broadcastTaskUpdated(int $taskId): void
+    {
+        if (Broadcasting::enabled()) {
+            try {
+                broadcast(new TaskUpdated($taskId));
+            } catch (\Throwable) {
+                // Realtime is best-effort.
+            }
+        }
+    }
 
     private function taskRelations(): array
     {
@@ -163,6 +180,10 @@ class TaskController extends Controller
 
         $this->recordStatusChange($task, $user, null, (int) $statusId);
 
+        if (! empty($data['assigneeId'])) {
+            $this->notifications->notifyAssignee($user, $task, (int) $data['assigneeId']);
+        }
+
         $task->load($this->taskRelations());
 
         return response()->json(['task' => ApiPresenter::task($task, true)], 201);
@@ -260,13 +281,23 @@ class TaskController extends Controller
             }
         }
 
+        $previousAssigneeId = $task->assignee_id;
+
         $task->update($update);
 
         if ($toStatusId !== $fromStatusId) {
             $this->recordStatusChange($task, $user, $fromStatusId, $toStatusId);
         }
 
+        if (array_key_exists('assignee_id', $update)) {
+            $newAssigneeId = $update['assignee_id'];
+            if ($newAssigneeId !== null && (int) $newAssigneeId !== (int) $previousAssigneeId) {
+                $this->notifications->notifyAssignee($user, $task, (int) $newAssigneeId);
+            }
+        }
+
         $task->load($this->taskRelations());
+        $this->broadcastTaskUpdated((int) $task->id);
 
         return response()->json(['task' => ApiPresenter::task($task, true)]);
     }
@@ -477,6 +508,12 @@ class TaskController extends Controller
         ]);
         $comment->load(['author', 'files', 'replyTo.author', 'replyTo.files']);
 
+        $task = Task::query()->find($id);
+        if ($task) {
+            $this->notifications->notifyComment($user, $task, $comment);
+        }
+        $this->broadcastTaskUpdated($id);
+
         return response()->json(['comment' => ApiPresenter::comment($comment)], 201);
     }
 
@@ -504,23 +541,44 @@ class TaskController extends Controller
 
         $body = trim((string) ($request->input('body') ?? ''));
         if ($body === '' && $comment->files->isEmpty()) {
+            $taskId = (int) $comment->task_id;
             foreach ($comment->files as $file) {
                 if ($this->files->exists($file->key)) {
                     $this->files->delete($file->key);
                 }
             }
             $comment->delete();
+            $this->broadcastTaskUpdated($taskId);
 
             return response()->json(['ok' => true, 'deleted' => true]);
         }
 
         if ($body !== $comment->body) {
+            $oldMentions = $this->notifications->mentionedUserIds((string) $comment->body);
             $comment->body = $body;
             $comment->edited_at = now();
             $comment->save();
+
+            $newMentions = array_values(array_diff(
+                $this->notifications->mentionedUserIds($body),
+                $oldMentions,
+            ));
+
+            if ($newMentions !== []) {
+                $task = Task::query()->find($comment->task_id);
+                if ($task) {
+                    $this->notifications->notifyMentions(
+                        $user,
+                        $task,
+                        $comment,
+                        onlyUserIds: $newMentions,
+                    );
+                }
+            }
         }
 
         $comment->load(['author', 'files', 'replyTo.author', 'replyTo.files']);
+        $this->broadcastTaskUpdated((int) $comment->task_id);
 
         return response()->json(['comment' => ApiPresenter::comment($comment)]);
     }
@@ -540,12 +598,14 @@ class TaskController extends Controller
             return response()->json(['error' => 'Можно удалять только свои сообщения'], 403);
         }
 
+        $taskId = (int) $comment->task_id;
         foreach ($comment->files as $file) {
             if ($this->files->exists($file->key)) {
                 $this->files->delete($file->key);
             }
         }
         $comment->delete();
+        $this->broadcastTaskUpdated($taskId);
 
         return response()->json(['ok' => true]);
     }
@@ -582,6 +642,7 @@ class TaskController extends Controller
         }
 
         $commentId = $attachment->comment_id;
+        $taskId = $attachment->task_id ? (int) $attachment->task_id : null;
 
         if ($this->files->exists($attachment->key)) {
             $this->files->delete($attachment->key);
@@ -592,6 +653,7 @@ class TaskController extends Controller
         if ($commentId) {
             $comment = Comment::query()->withCount('files')->find($commentId);
             if ($comment) {
+                $taskId = (int) $comment->task_id;
                 if (trim((string) $comment->body) === '' && (int) $comment->files_count === 0) {
                     $comment->delete();
                     $commentDeleted = true;
@@ -600,6 +662,10 @@ class TaskController extends Controller
                     $comment->save();
                 }
             }
+        }
+
+        if ($taskId) {
+            $this->broadcastTaskUpdated($taskId);
         }
 
         return response()->json([
@@ -677,6 +743,14 @@ class TaskController extends Controller
                 'url' => '/api/attachments/'.$attachment->id,
             ]);
             $attachments[] = ApiPresenter::attachment($attachment->fresh());
+        }
+
+        $taskId = $owner['task_id'] ?? null;
+        if (! $taskId && ! empty($owner['comment_id'])) {
+            $taskId = Comment::query()->whereKey($owner['comment_id'])->value('task_id');
+        }
+        if ($taskId) {
+            $this->broadcastTaskUpdated((int) $taskId);
         }
 
         return response()->json([

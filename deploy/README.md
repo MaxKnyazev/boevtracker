@@ -122,3 +122,21 @@ node scripts/build-shared-deploy.mjs
 - `frontend/.env.production` → `VITE_API_URL=`
 
 Не коммитьте `VITE_API_URL=http://localhost:3001`.
+
+## 7. Realtime (Pusher)
+
+Уведомления и чат работают через **Pusher** (WebSocket в облаке). Без ключей включается лёгкий polling раз в ~4 сек (без long-poll).
+
+1. Создайте приложение на https://pusher.com/channels  
+2. В `app_laravel/.env` на сервере (и локально в `api/.env`):
+
+```env
+BROADCAST_CONNECTION=pusher
+PUSHER_APP_ID=...
+PUSHER_APP_KEY=...
+PUSHER_APP_SECRET=...
+PUSHER_APP_CLUSTER=eu
+```
+
+3. `php artisan config:clear`  
+4. Ключ для фронта отдаёт `GET /api/realtime/config` — отдельно в Vite его прописывать не нужно.

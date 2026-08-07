@@ -53,6 +53,7 @@ import {
 } from '@/components/file-drop-zone';
 import { useAuthStore } from '@/store/auth';
 import { useUploadsStore } from '@/store/uploads';
+import { realtimeClient } from '@/lib/realtime';
 
 function replySnippet(
   source: {
@@ -234,6 +235,15 @@ export function TaskModal({
       highlightTimerRef.current = null;
     }
     void load();
+  }, [taskId]);
+
+  useEffect(() => {
+    realtimeClient.watchTask(taskId, (next) => {
+      setTask(next);
+    });
+    return () => {
+      realtimeClient.unwatchTask(taskId);
+    };
   }, [taskId]);
 
   useEffect(() => {
