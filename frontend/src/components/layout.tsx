@@ -13,6 +13,7 @@ import {
 import { useAuthStore, canManageUsers } from '@/store/auth';
 import { useNotificationsStore } from '@/store/notifications';
 import { NotificationWatcher } from '@/components/notification-watcher';
+import { UploadProgressDock } from '@/components/upload-progress-dock';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ROLE_LABELS, cn } from '@/lib/utils';
@@ -186,6 +187,7 @@ export function AppLayout() {
         </div>
       </main>
       <NotificationWatcher />
+      <UploadProgressDock />
     </div>
   );
 }
