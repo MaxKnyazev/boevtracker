@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
+use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\RealtimeController;
@@ -21,7 +22,9 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::middleware(AuthenticateJwt::class)->group(function () {
-    Route::get('/realtime/wait', [RealtimeController::class, 'wait']);
+    Route::get('/realtime/config', [RealtimeController::class, 'config']);
+    Route::get('/realtime/poll', [RealtimeController::class, 'poll']);
+    Route::post('/broadcasting/auth', [BroadcastAuthController::class, 'auth']);
 
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);

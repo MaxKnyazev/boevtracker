@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\TaskUpdated;
 use App\Models\Attachment;
 use App\Models\Comment;
 use App\Models\Project;
@@ -12,6 +13,7 @@ use App\Models\User;
 use App\Services\FileStorage;
 use App\Services\NotificationService;
 use App\Support\ApiPresenter;
+use App\Support\Broadcasting;
 use App\Support\Constants;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,6 +27,17 @@ class TaskController extends Controller
         private FileStorage $files,
         private NotificationService $notifications,
     ) {}
+
+    private function broadcastTaskUpdated(int $taskId): void
+    {
+        if (Broadcasting::enabled()) {
+            try {
+                broadcast(new TaskUpdated($taskId));
+            } catch (\Throwable) {
+                // Realtime is best-effort.
+            }
+        }
+    }
 
     private function taskRelations(): array
     {
@@ -284,6 +297,7 @@ class TaskController extends Controller
         }
 
         $task->load($this->taskRelations());
+        $this->broadcastTaskUpdated((int) $task->id);
 
         return response()->json(['task' => ApiPresenter::task($task, true)]);
     }
@@ -498,6 +512,7 @@ class TaskController extends Controller
         if ($task) {
             $this->notifications->notifyComment($user, $task, $comment);
         }
+        $this->broadcastTaskUpdated($id);
 
         return response()->json(['comment' => ApiPresenter::comment($comment)], 201);
     }
@@ -526,12 +541,14 @@ class TaskController extends Controller
 
         $body = trim((string) ($request->input('body') ?? ''));
         if ($body === '' && $comment->files->isEmpty()) {
+            $taskId = (int) $comment->task_id;
             foreach ($comment->files as $file) {
                 if ($this->files->exists($file->key)) {
                     $this->files->delete($file->key);
                 }
             }
             $comment->delete();
+            $this->broadcastTaskUpdated($taskId);
 
             return response()->json(['ok' => true, 'deleted' => true]);
         }
@@ -561,6 +578,7 @@ class TaskController extends Controller
         }
 
         $comment->load(['author', 'files', 'replyTo.author', 'replyTo.files']);
+        $this->broadcastTaskUpdated((int) $comment->task_id);
 
         return response()->json(['comment' => ApiPresenter::comment($comment)]);
     }
@@ -580,12 +598,14 @@ class TaskController extends Controller
             return response()->json(['error' => 'Можно удалять только свои сообщения'], 403);
         }
 
+        $taskId = (int) $comment->task_id;
         foreach ($comment->files as $file) {
             if ($this->files->exists($file->key)) {
                 $this->files->delete($file->key);
             }
         }
         $comment->delete();
+        $this->broadcastTaskUpdated($taskId);
 
         return response()->json(['ok' => true]);
     }
@@ -622,6 +642,7 @@ class TaskController extends Controller
         }
 
         $commentId = $attachment->comment_id;
+        $taskId = $attachment->task_id ? (int) $attachment->task_id : null;
 
         if ($this->files->exists($attachment->key)) {
             $this->files->delete($attachment->key);
@@ -632,6 +653,7 @@ class TaskController extends Controller
         if ($commentId) {
             $comment = Comment::query()->withCount('files')->find($commentId);
             if ($comment) {
+                $taskId = (int) $comment->task_id;
                 if (trim((string) $comment->body) === '' && (int) $comment->files_count === 0) {
                     $comment->delete();
                     $commentDeleted = true;
@@ -640,6 +662,10 @@ class TaskController extends Controller
                     $comment->save();
                 }
             }
+        }
+
+        if ($taskId) {
+            $this->broadcastTaskUpdated($taskId);
         }
 
         return response()->json([
@@ -698,7 +724,7 @@ class TaskController extends Controller
         foreach ($list as $file) {
             if ($file->getSize() > $this->files->maxBytes()) {
                 return response()->json([
-                    'error' => 'Файл «'.$file->getClientOriginalName().'» больше 100 МБ',
+                    'error' => 'Файл «'.$file->getClientOriginalName().'» больше 500 МБ',
                 ], 400);
             }
             $stored = $this->files->store($file);
@@ -717,6 +743,14 @@ class TaskController extends Controller
                 'url' => '/api/attachments/'.$attachment->id,
             ]);
             $attachments[] = ApiPresenter::attachment($attachment->fresh());
+        }
+
+        $taskId = $owner['task_id'] ?? null;
+        if (! $taskId && ! empty($owner['comment_id'])) {
+            $taskId = Comment::query()->whereKey($owner['comment_id'])->value('task_id');
+        }
+        if ($taskId) {
+            $this->broadcastTaskUpdated((int) $taskId);
         }
 
         return response()->json([

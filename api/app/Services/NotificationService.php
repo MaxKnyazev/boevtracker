@@ -2,10 +2,12 @@
 
 namespace App\Services;
 
+use App\Events\UserNotificationCreated;
 use App\Models\Comment;
 use App\Models\Notification;
 use App\Models\Task;
 use App\Models\User;
+use App\Support\Broadcasting;
 
 class NotificationService
 {
@@ -129,7 +131,7 @@ class NotificationService
         ?int $taskId = null,
         ?int $commentId = null,
     ): void {
-        Notification::query()->create([
+        $notification = Notification::query()->create([
             'user_id' => $userId,
             'actor_id' => $actorId,
             'type' => $type,
@@ -139,6 +141,14 @@ class NotificationService
             'comment_id' => $commentId,
             'created_at' => now(),
         ]);
+
+        if (Broadcasting::enabled()) {
+            try {
+                broadcast(new UserNotificationCreated($notification));
+            } catch (\Throwable) {
+                // Realtime is best-effort; DB notification already saved.
+            }
+        }
     }
 
     private function snippet(?string $text, int $max = 120): string

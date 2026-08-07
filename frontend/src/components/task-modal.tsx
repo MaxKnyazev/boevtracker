@@ -197,9 +197,8 @@ export function TaskModal({
   }, [taskId]);
 
   useEffect(() => {
-    realtimeClient.watchTask(taskId, (next, version) => {
+    realtimeClient.watchTask(taskId, (next) => {
       setTask(next);
-      realtimeClient.setTaskVersion(taskId, version);
     });
     return () => {
       realtimeClient.unwatchTask(taskId);

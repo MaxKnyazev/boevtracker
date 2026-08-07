@@ -7,24 +7,47 @@ use App\Models\Comment;
 use App\Models\Notification;
 use App\Models\Task;
 use App\Support\ApiPresenter;
+use App\Support\Broadcasting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class RealtimeController extends Controller
 {
-    private const MAX_WAIT_SECONDS = 22;
-
-    private const POLL_INTERVAL_US = 400_000;
-
-    public function wait(Request $request): JsonResponse
+    public function config(Request $request): JsonResponse
     {
         $user = $this->user($request);
         if ($resp = $this->forbidPending($user)) {
             return $resp;
         }
 
-        @set_time_limit(self::MAX_WAIT_SECONDS + 5);
-        ignore_user_abort(true);
+        if (! Broadcasting::enabled()) {
+            return response()->json([
+                'driver' => 'poll',
+                'pollIntervalMs' => 4000,
+                'pusher' => null,
+            ]);
+        }
+
+        return response()->json([
+            'driver' => 'pusher',
+            'pollIntervalMs' => null,
+            'pusher' => [
+                'key' => config('broadcasting.connections.pusher.key'),
+                'cluster' => config('broadcasting.connections.pusher.options.cluster', 'mt1'),
+            ],
+        ]);
+    }
+
+    /**
+     * Lightweight one-shot poll (fallback when Pusher is not configured).
+     * Does not hold the PHP worker in a sleep loop.
+     */
+    public function poll(Request $request): JsonResponse
+    {
+        $user = $this->user($request);
+        if ($resp = $this->forbidPending($user)) {
+            return $resp;
+        }
 
         $afterNotificationId = max(0, (int) $request->query('afterNotificationId', 0));
         $taskId = $request->query('taskId');
@@ -32,75 +55,31 @@ class RealtimeController extends Controller
             ? (int) $taskId
             : null;
         $clientTaskVersion = (string) $request->query('taskVersion', '');
-        $timeout = (int) $request->query('timeout', self::MAX_WAIT_SECONDS);
-        $timeout = max(1, min(self::MAX_WAIT_SECONDS, $timeout));
 
-        $deadline = microtime(true) + $timeout;
+        $notifications = Notification::query()
+            ->with(['actor', 'task'])
+            ->where('user_id', $user->id)
+            ->where('id', '>', $afterNotificationId)
+            ->orderBy('id')
+            ->limit(50)
+            ->get();
+
         $taskVersion = $taskId ? $this->taskVersion($taskId) : null;
+        $taskChanged = $taskId !== null
+            && ($clientTaskVersion === '' || $taskVersion !== $clientTaskVersion);
 
-        while (microtime(true) < $deadline) {
-            if (connection_aborted()) {
-                break;
-            }
-
-            $notifications = Notification::query()
-                ->with(['actor', 'task'])
-                ->where('user_id', $user->id)
-                ->where('id', '>', $afterNotificationId)
-                ->orderBy('id')
-                ->limit(50)
-                ->get();
-
-            $taskChanged = false;
-            if ($taskId !== null) {
-                $taskVersion = $this->taskVersion($taskId);
-                $taskChanged = $clientTaskVersion === '' || $taskVersion !== $clientTaskVersion;
-            }
-
-            if ($notifications->isNotEmpty() || $taskChanged) {
-                return $this->payload(
-                    $user->id,
-                    $notifications,
-                    $afterNotificationId,
-                    $taskId,
-                    $taskChanged,
-                    $taskVersion,
-                );
-            }
-
-            usleep(self::POLL_INTERVAL_US);
-        }
-
-        return $this->payload(
-            $user->id,
-            collect(),
-            $afterNotificationId,
-            $taskId,
-            false,
-            $taskVersion,
-        );
-    }
-
-    private function payload(
-        int $userId,
-        $notifications,
-        int $afterNotificationId,
-        ?int $taskId,
-        bool $includeTask,
-        ?string $taskVersion,
-    ): JsonResponse {
         $maxNotificationId = $afterNotificationId;
         foreach ($notifications as $n) {
             $maxNotificationId = max($maxNotificationId, (int) $n->id);
         }
 
         $unreadCount = Notification::query()
-            ->where('user_id', $userId)
+            ->where('user_id', $user->id)
             ->whereNull('read_at')
             ->count();
 
         $taskPayload = null;
-        if ($includeTask && $taskId !== null) {
+        if ($taskChanged && $taskId !== null) {
             $task = Task::query()
                 ->with([
                     'assignee',

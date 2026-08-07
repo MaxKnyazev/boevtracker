@@ -39,7 +39,8 @@ export function NotificationWatcher() {
     hydrateForUser(user.id);
     const afterId = useNotificationsStore.getState().lastSeenId;
 
-    realtimeClient.start({
+    void realtimeClient.start({
+      userId: user.id,
       afterNotificationId: afterId,
       onNotifications: (
         items: AppNotification[],

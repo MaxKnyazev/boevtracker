@@ -357,12 +357,18 @@ export const api = {
   markAllNotificationsRead: () =>
     request<{ ok: boolean }>('/api/notifications/read-all', { method: 'POST' }),
 
-  realtimeWait: (
+  realtimeConfig: () =>
+    request<{
+      driver: 'pusher' | 'poll';
+      pollIntervalMs: number | null;
+      pusher: { key: string; cluster: string } | null;
+    }>('/api/realtime/config'),
+
+  realtimePoll: (
     params: {
       afterNotificationId?: number;
       taskId?: number | null;
       taskVersion?: string;
-      timeout?: number;
     },
     signal?: AbortSignal,
   ) => {
@@ -376,15 +382,12 @@ export const api = {
     if (params.taskVersion) {
       q.set('taskVersion', params.taskVersion);
     }
-    if (params.timeout != null) {
-      q.set('timeout', String(params.timeout));
-    }
     return request<{
       notifications: AppNotification[];
       unreadCount: number;
       afterNotificationId: number;
       task: Task | null;
       taskVersion: string | null;
-    }>(`/api/realtime/wait?${q.toString()}`, { signal });
+    }>(`/api/realtime/poll?${q.toString()}`, { signal });
   },
 };
