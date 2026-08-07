@@ -787,17 +787,37 @@ export function TaskModal({
                 )}
                 {taskFileUploads.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
-                    {taskFileUploads.map((item) => (
-                      <PendingFileChip
-                        key={item.id}
-                        name={item.name}
-                        progress={item.progress}
-                        status={
-                          item.progress >= 100 ? 'done' : 'uploading'
-                        }
-                        className="min-w-[10rem] max-w-full sm:max-w-[14rem]"
-                      />
-                    ))}
+                    {taskUploadJobs
+                      .filter((job) => job.kind === 'task')
+                      .flatMap((job) =>
+                        job.files.map((item) => (
+                          <PendingFileChip
+                            key={item.id}
+                            name={item.name}
+                            progress={
+                              item.status === 'pending' ? null : item.progress
+                            }
+                            status={
+                              item.status === 'error'
+                                ? 'error'
+                                : item.status === 'done'
+                                  ? 'done'
+                                  : item.status === 'pending'
+                                    ? 'pending'
+                                    : 'uploading'
+                            }
+                            onRemove={
+                              item.status !== 'done'
+                                ? () =>
+                                    useUploadsStore
+                                      .getState()
+                                      .cancelFile(job.id, item.id)
+                                : undefined
+                            }
+                            className="min-w-[10rem] max-w-full sm:max-w-[14rem]"
+                          />
+                        )),
+                      )}
                   </div>
                 )}
                 <FileGallery
@@ -1109,17 +1129,40 @@ export function TaskModal({
                               className="min-w-[9rem] max-w-full sm:max-w-[13rem]"
                             />
                           ))}
-                          {commentFileUploads.map((item) => (
-                            <PendingFileChip
-                              key={item.id}
-                              name={item.name}
-                              progress={item.progress}
-                              status={
-                                item.progress >= 100 ? 'done' : 'uploading'
-                              }
-                              className="min-w-[9rem] max-w-full sm:max-w-[13rem]"
-                            />
-                          ))}
+                          {commentFileUploads.length > 0 &&
+                            taskUploadJobs
+                              .filter((job) => job.kind === 'comment')
+                              .flatMap((job) =>
+                                job.files.map((item) => (
+                                  <PendingFileChip
+                                    key={item.id}
+                                    name={item.name}
+                                    progress={
+                                      item.status === 'pending'
+                                        ? null
+                                        : item.progress
+                                    }
+                                    status={
+                                      item.status === 'error'
+                                        ? 'error'
+                                        : item.status === 'done'
+                                          ? 'done'
+                                          : item.status === 'pending'
+                                            ? 'pending'
+                                            : 'uploading'
+                                    }
+                                    onRemove={
+                                      item.status !== 'done'
+                                        ? () =>
+                                            useUploadsStore
+                                              .getState()
+                                              .cancelFile(job.id, item.id)
+                                        : undefined
+                                    }
+                                    className="min-w-[9rem] max-w-full sm:max-w-[13rem]"
+                                  />
+                                )),
+                              )}
                         </div>
                       )}
                       <form onSubmit={(e) => void sendComment(e)}>

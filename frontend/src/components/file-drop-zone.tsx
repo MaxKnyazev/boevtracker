@@ -74,7 +74,7 @@ export function PendingFileChip({
             {Math.round(pct)}%
           </span>
         )}
-        {onRemove && status !== 'uploading' && (
+        {onRemove && status !== 'done' && (
           <button
             type="button"
             className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"

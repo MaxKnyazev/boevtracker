@@ -10,6 +10,7 @@ import { useUploadsStore } from '@/store/uploads';
 export function UploadProgressDock() {
   const jobs = useUploadsStore((s) => s.jobs);
   const cancelJob = useUploadsStore((s) => s.cancelJob);
+  const cancelFile = useUploadsStore((s) => s.cancelFile);
   const dismissJob = useUploadsStore((s) => s.dismissJob);
 
   const visible = jobs.filter(
@@ -75,13 +76,22 @@ export function UploadProgressDock() {
                 <PendingFileChip
                   key={file.id}
                   name={file.name}
-                  progress={file.progress}
+                  progress={
+                    file.status === 'pending' ? null : file.progress
+                  }
                   status={
                     file.status === 'error'
                       ? 'error'
-                      : file.progress >= 100
+                      : file.status === 'done'
                         ? 'done'
-                        : 'uploading'
+                        : file.status === 'pending'
+                          ? 'pending'
+                          : 'uploading'
+                  }
+                  onRemove={
+                    job.status === 'uploading' && file.status !== 'done'
+                      ? () => cancelFile(job.id, file.id)
+                      : undefined
                   }
                 />
               ))}
