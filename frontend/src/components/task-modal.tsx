@@ -11,6 +11,8 @@ import {
   Check,
   Download,
   FileIcon,
+  Maximize2,
+  Minus,
   Paperclip,
   Pencil,
   Plus,
@@ -42,8 +44,15 @@ import {
   UserAvatar,
   displayName,
 } from '@/components/user-avatar';
-import { FileDropZone, MAX_UPLOAD_FILE_SIZE, extractClipboardFiles } from '@/components/file-drop-zone';
+import {
+  FileDropZone,
+  MAX_UPLOAD_FILE_SIZE,
+  PendingFileChip,
+  UploadProgressBar,
+  extractClipboardFiles,
+} from '@/components/file-drop-zone';
 import { useAuthStore } from '@/store/auth';
+import { useUploadsStore } from '@/store/uploads';
 
 function replySnippet(
   source: {
@@ -144,13 +153,34 @@ export function TaskModal({
   onChanged: () => Promise<void>;
 }) {
   const me = useAuthStore((s) => s.user);
+  const uploadTaskFilesGlobal = useUploadsStore((s) => s.uploadTaskFiles);
+  const uploadCommentFilesGlobal = useUploadsStore((s) => s.uploadCommentFiles);
+  const allUploadJobs = useUploadsStore((s) => s.jobs);
+  const taskUploadJobs = allUploadJobs.filter(
+    (job) => job.taskId === taskId && job.status === 'uploading',
+  );
+  const taskFileUploads = taskUploadJobs
+    .filter((job) => job.kind === 'task')
+    .flatMap((job) => job.files);
+  const commentFileUploads = taskUploadJobs
+    .filter((job) => job.kind === 'comment')
+    .flatMap((job) => job.files);
+  const overallUploadPercent =
+    taskUploadJobs.length > 0
+      ? Math.round(
+          taskUploadJobs.reduce((sum, job) => sum + job.overallPercent, 0) /
+            taskUploadJobs.length,
+        )
+      : null;
+  const uploadingFiles = taskFileUploads.length > 0;
+
   const [task, setTask] = useState<Task | null>(null);
   const [comment, setComment] = useState('');
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [minimized, setMinimized] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
-  const [uploadingFiles, setUploadingFiles] = useState(false);
   const [lightboxFile, setLightboxFile] = useState<Attachment | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
@@ -168,18 +198,28 @@ export function TaskModal({
   const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
   const commentComposerRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
 
   const load = async () => {
     try {
       const data = await api.task(taskId);
+      if (!mountedRef.current) return;
       setTask(data.task);
       setError('');
       setEditingTitle(false);
       setEditingDescription(false);
     } catch (err) {
+      if (!mountedRef.current) return;
       setError(err instanceof Error ? err.message : 'Ошибка');
     }
   };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     setReplyTo(null);
@@ -187,6 +227,7 @@ export function TaskModal({
     setEditDraft('');
     setComment('');
     setPendingFiles([]);
+    setMinimized(false);
     setHighlightedCommentId(null);
     if (highlightTimerRef.current) {
       clearTimeout(highlightTimerRef.current);
@@ -231,22 +272,37 @@ export function TaskModal({
     setSending(true);
     try {
       const body = comment.trim();
+      const filesToUpload = [...pendingFiles];
       const res = await api.addComment(taskId, body, replyTo?.id ?? null);
-      if (pendingFiles.length > 0) {
-        const oversized = pendingFiles.find(
+      setComment('');
+      setPendingFiles([]);
+      setReplyTo(null);
+
+      if (filesToUpload.length > 0) {
+        const oversized = filesToUpload.find(
           (f) => f.size > MAX_UPLOAD_FILE_SIZE,
         );
         if (oversized) {
           setError(`Файл «${oversized.name}» больше 500 МБ`);
+          await load();
+          await onChanged();
         } else {
-          await api.uploadCommentFiles(res.comment.id, pendingFiles);
+          // Store owns the XHR — survives modal close.
+          void uploadCommentFilesGlobal({
+            taskId,
+            commentId: res.comment.id,
+            title: task?.title || 'Комментарий',
+            files: filesToUpload,
+            onComplete: async () => {
+              if (mountedRef.current) await load();
+              await onChanged();
+            },
+          });
         }
+      } else {
+        await load();
+        await onChanged();
       }
-      setComment('');
-      setPendingFiles([]);
-      setReplyTo(null);
-      await load();
-      await onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка отправки');
     } finally {
@@ -266,20 +322,18 @@ export function TaskModal({
     return ok;
   };
 
-  const uploadTaskFiles = async (incoming: File[]) => {
+  const uploadTaskFiles = (incoming: File[]) => {
     const files = filterFiles(incoming);
     if (!files.length) return;
-    setUploadingFiles(true);
-    try {
-      await api.uploadTaskFiles(taskId, files);
-      await load();
-      await onChanged();
-      setError('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки файла');
-    } finally {
-      setUploadingFiles(false);
-    }
+    void uploadTaskFilesGlobal({
+      taskId,
+      title: task?.title || 'Задача',
+      files,
+      onComplete: async () => {
+        if (mountedRef.current) await load();
+        await onChanged();
+      },
+    });
   };
 
   const addPendingFiles = (incoming: File[]) => {
@@ -448,6 +502,8 @@ export function TaskModal({
   }
 
   const comments = task.comments || [];
+  const isFileUploadActive = uploadingFiles || commentFileUploads.length > 0;
+  const minimizedProgress = isFileUploadActive ? (overallUploadPercent ?? 0) : null;
 
   const handleDialogOpenChange = (open: boolean) => {
     if (!open) {
@@ -455,6 +511,7 @@ export function TaskModal({
         setLightboxFile(null);
         return;
       }
+      // Closing must not cancel uploads — they live in the global store/dock.
       onClose();
     }
   };
@@ -474,6 +531,7 @@ export function TaskModal({
 
   return (
     <>
+      {!minimized && (
       <Dialog open onOpenChange={handleDialogOpenChange}>
         <DialogContent
           className="max-h-[90vh] max-w-4xl overflow-hidden p-0"
@@ -488,10 +546,25 @@ export function TaskModal({
             }
           }}
         >
+        <button
+          type="button"
+          className="absolute right-12 top-4 rounded-sm opacity-70 hover:opacity-100"
+          title={isFileUploadActive ? 'Свернуть (загрузка продолжится)' : 'Свернуть'}
+          onClick={() => {
+            // While uploading, close the modal so the global dock stays visible.
+            if (isFileUploadActive) {
+              onClose();
+              return;
+            }
+            setMinimized(true);
+          }}
+        >
+          <Minus className="h-4 w-4" />
+        </button>
         <div className="max-h-[90vh] overflow-y-auto p-6 [scrollbar-gutter:stable]">
           <DialogHeader>
             <DialogTitle className="sr-only">{task.title}</DialogTitle>
-            <div className="flex min-h-11 min-w-0 items-start gap-2 pr-8">
+            <div className="flex min-h-11 min-w-0 items-start gap-2 pr-14">
               {writable && editingTitle ? (
                 <>
                   <Input
@@ -667,20 +740,65 @@ export function TaskModal({
                 <Label>Файлы задачи</Label>
                 {writable && (
                   <FileDropZone
-                    disabled={uploadingFiles}
-                    onFiles={(files) => void uploadTaskFiles(files)}
+                    disabled={false}
+                    onFiles={(files) => {
+                      if (uploadingFiles) return;
+                      void uploadTaskFiles(files);
+                    }}
                     className="min-h-[88px]"
                   >
                     <UploadCloud className="h-5 w-5 text-muted-foreground" />
                     <div className="text-sm">
                       {uploadingFiles
-                        ? 'Загрузка...'
+                        ? overallUploadPercent != null
+                          ? `Загрузка… ${overallUploadPercent}%`
+                          : 'Загрузка...'
                         : 'Перетащите файлы сюда, нажмите или вставьте из буфера'}
                     </div>
                     <div className="text-[11px] text-muted-foreground">
                       Можно несколько файлов, до 500 МБ каждый · Ctrl+V
                     </div>
+                    {uploadingFiles && (
+                      <>
+                        <UploadProgressBar
+                          value={overallUploadPercent ?? 0}
+                          className="mt-1 w-full max-w-xs"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 h-7 px-3 text-xs"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            for (const job of taskUploadJobs.filter(
+                              (j) => j.kind === 'task',
+                            )) {
+                              useUploadsStore.getState().cancelJob(job.id);
+                            }
+                          }}
+                        >
+                          Отменить
+                        </Button>
+                      </>
+                    )}
                   </FileDropZone>
+                )}
+                {taskFileUploads.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {taskFileUploads.map((item) => (
+                      <PendingFileChip
+                        key={item.id}
+                        name={item.name}
+                        progress={item.progress}
+                        status={
+                          item.progress >= 100 ? 'done' : 'uploading'
+                        }
+                        className="min-w-[10rem] max-w-full sm:max-w-[14rem]"
+                      />
+                    ))}
+                  </div>
                 )}
                 <FileGallery
                   files={task.files || []}
@@ -970,31 +1088,37 @@ export function TaskModal({
                           </button>
                         </div>
                       ) : null}
-                      {pendingFiles.length > 0 && (
+                      {(pendingFiles.length > 0 ||
+                        commentFileUploads.length > 0) && (
                         <div className="mb-2 flex flex-wrap gap-1.5">
                           {pendingFiles.map((file, index) => (
-                            <div
+                            <PendingFileChip
                               key={`${file.name}-${file.size}-${index}`}
-                              className="flex max-w-full items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-xs"
-                            >
-                              <FileIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                              <span className="min-w-0 truncate">
-                                {file.name}
-                              </span>
-                              <button
-                                type="button"
-                                className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setPendingFiles((prev) =>
-                                    prev.filter((_, i) => i !== index),
-                                  );
-                                }}
-                                title="Убрать файл"
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
+                              name={file.name}
+                              progress={null}
+                              status="pending"
+                              disabled={sending}
+                              onRemove={
+                                sending
+                                  ? undefined
+                                  : () =>
+                                      setPendingFiles((prev) =>
+                                        prev.filter((_, i) => i !== index),
+                                      )
+                              }
+                              className="min-w-[9rem] max-w-full sm:max-w-[13rem]"
+                            />
+                          ))}
+                          {commentFileUploads.map((item) => (
+                            <PendingFileChip
+                              key={item.id}
+                              name={item.name}
+                              progress={item.progress}
+                              status={
+                                item.progress >= 100 ? 'done' : 'uploading'
+                              }
+                              className="min-w-[9rem] max-w-full sm:max-w-[13rem]"
+                            />
                           ))}
                         </div>
                       )}
@@ -1237,6 +1361,51 @@ export function TaskModal({
         </div>
       </DialogContent>
       </Dialog>
+      )}
+
+      {minimized &&
+        createPortal(
+          <div className="fixed bottom-4 right-4 z-[120] w-[min(100vw-2rem,22rem)] rounded-xl border border-border bg-card p-3 shadow-xl">
+            <div className="flex items-start gap-2">
+              <button
+                type="button"
+                className="min-w-0 flex-1 text-left"
+                onClick={() => setMinimized(false)}
+                title="Развернуть задачу"
+              >
+                <div className="truncate text-sm font-medium">{task.title}</div>
+                <div className="mt-0.5 text-[11px] text-muted-foreground">
+                  {minimizedProgress != null
+                    ? `Загрузка файлов… ${Math.round(minimizedProgress)}%`
+                    : 'Нажмите, чтобы развернуть'}
+                </div>
+              </button>
+              <button
+                type="button"
+                className="rounded-sm p-1 opacity-70 hover:bg-accent hover:opacity-100"
+                title="Развернуть"
+                onClick={() => setMinimized(false)}
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className="rounded-sm p-1 opacity-70 hover:bg-accent hover:opacity-100"
+                title="Закрыть"
+                onClick={onClose}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {minimizedProgress != null && (
+              <UploadProgressBar
+                value={minimizedProgress}
+                className="mt-2"
+              />
+            )}
+          </div>,
+          document.body,
+        )}
 
       {lightboxFile && (
         <ImageLightbox

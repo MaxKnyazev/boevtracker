@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, FileIcon, GripVertical, Lock, Plus, Settings2, UploadCloud, X } from 'lucide-react';
+import { ArrowLeft, GripVertical, Lock, Plus, Settings2, UploadCloud } from 'lucide-react';
 import {
   DndContext,
   DragOverlay,
@@ -48,7 +48,13 @@ import { TaskCard } from '@/components/task-card';
 import { TaskModal } from '@/components/task-modal';
 import { MoveBoardDialog } from '@/components/move-board-dialog';
 import { TaskViewControls } from '@/components/task-view-controls';
-import { FileDropZone, MAX_UPLOAD_FILE_SIZE, extractClipboardFiles } from '@/components/file-drop-zone';
+import {
+  FileDropZone,
+  MAX_UPLOAD_FILE_SIZE,
+  PendingFileChip,
+  extractClipboardFiles,
+} from '@/components/file-drop-zone';
+import { useUploadsStore } from '@/store/uploads';
 import {
   DEFAULT_TASK_VIEW,
   applyTaskView,
@@ -516,19 +522,29 @@ export function ProjectPage({
     if (!project) return;
     setCreating(true);
     try {
+      const filesToUpload = [...createFiles];
+      const taskTitle = title.trim();
       const res = await api.createTask(project.id, {
-        title: title.trim(),
+        title: taskTitle,
         description: description.trim() || undefined,
         priority: priority as Task['priority'],
         deadline: deadline ? new Date(deadline).toISOString() : null,
       });
-      if (createFiles.length > 0) {
-        await api.uploadTaskFiles(res.task.id, createFiles);
-      }
       resetCreateForm();
       setCreateOpen(false);
       setError('');
       await load();
+
+      if (filesToUpload.length > 0) {
+        void useUploadsStore.getState().uploadTaskFiles({
+          taskId: res.task.id,
+          title: taskTitle,
+          files: filesToUpload,
+          onComplete: async () => {
+            await load();
+          },
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка создания задачи');
     } finally {
@@ -881,26 +897,22 @@ export function ProjectPage({
               {createFiles.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {createFiles.map((file, index) => (
-                    <div
+                    <PendingFileChip
                       key={`${file.name}-${file.size}-${index}`}
-                      className="flex max-w-full items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-xs"
-                    >
-                      <FileIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 truncate">{file.name}</span>
-                      <button
-                        type="button"
-                        className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        disabled={creating}
-                        onClick={() =>
-                          setCreateFiles((prev) =>
-                            prev.filter((_, i) => i !== index),
-                          )
-                        }
-                        title="Убрать файл"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                      name={file.name}
+                      progress={null}
+                      status="pending"
+                      disabled={creating}
+                      onRemove={
+                        creating
+                          ? undefined
+                          : () =>
+                              setCreateFiles((prev) =>
+                                prev.filter((_, i) => i !== index),
+                              )
+                      }
+                      className="min-w-[10rem] max-w-full sm:max-w-[14rem]"
+                    />
                   ))}
                 </div>
               )}

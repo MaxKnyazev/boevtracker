@@ -151,6 +151,154 @@ async function request<T>(
   return data as T;
 }
 
+export type UploadProgressEvent = {
+  /** 0-based index of the file currently uploading */
+  fileIndex: number;
+  /** Progress of the current file, 0–100 */
+  filePercent: number;
+  /** Overall progress across all files by bytes, 0–100 */
+  overallPercent: number;
+  fileName: string;
+  filesCount: number;
+};
+
+export class UploadAbortedError extends Error {
+  constructor() {
+    super('Загрузка отменена');
+    this.name = 'UploadAbortedError';
+  }
+}
+
+function parseErrorPayload(data: unknown): string {
+  if (!data || typeof data !== 'object') return 'Ошибка запроса';
+  const err = (data as { error?: unknown }).error;
+  if (typeof err === 'string') return err;
+  if (err && typeof err === 'object') {
+    const formErrors = (err as { formErrors?: unknown }).formErrors;
+    if (Array.isArray(formErrors) && typeof formErrors[0] === 'string') {
+      return formErrors[0];
+    }
+  }
+  return 'Ошибка запроса';
+}
+
+function uploadFormData<T>(
+  path: string,
+  form: FormData,
+  onProgress?: (percent: number) => void,
+  signal?: AbortSignal,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new UploadAbortedError());
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_URL}${path}`);
+    xhr.withCredentials = true;
+
+    const onAbort = () => {
+      xhr.abort();
+    };
+    signal?.addEventListener('abort', onAbort);
+
+    const cleanup = () => {
+      signal?.removeEventListener('abort', onAbort);
+    };
+
+    xhr.upload.onprogress = (event) => {
+      if (!onProgress || !event.lengthComputable || event.total <= 0) return;
+      onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    };
+
+    xhr.onload = () => {
+      cleanup();
+      let data: unknown = {};
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+      } catch {
+        data = {};
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(data as T);
+        return;
+      }
+      reject(new Error(parseErrorPayload(data)));
+    };
+
+    xhr.onerror = () => {
+      cleanup();
+      reject(new Error('Ошибка сети при загрузке файла'));
+    };
+    xhr.onabort = () => {
+      cleanup();
+      reject(new UploadAbortedError());
+    };
+    xhr.send(form);
+  });
+}
+
+async function uploadFilesSequential<T>(
+  path: string,
+  files: File[],
+  onProgress?: (event: UploadProgressEvent) => void,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (!files.length) {
+    throw new Error('Нет файлов для загрузки');
+  }
+
+  const sizes = files.map((f) => f.size);
+  const totalBytes = sizes.reduce((sum, n) => sum + n, 0) || 1;
+  let completedBytes = 0;
+  let lastResult: T | undefined;
+
+  for (let i = 0; i < files.length; i++) {
+    if (signal?.aborted) {
+      throw new UploadAbortedError();
+    }
+
+    const file = files[i];
+    const form = new FormData();
+    form.append('file', file);
+
+    lastResult = await uploadFormData<T>(
+      path,
+      form,
+      (filePercent) => {
+        const loadedForFile = (filePercent / 100) * sizes[i];
+        const overallPercent = Math.min(
+          100,
+          Math.round(((completedBytes + loadedForFile) / totalBytes) * 100),
+        );
+        onProgress?.({
+          fileIndex: i,
+          filePercent,
+          overallPercent,
+          fileName: file.name,
+          filesCount: files.length,
+        });
+      },
+      signal,
+    );
+
+    completedBytes += sizes[i];
+    onProgress?.({
+      fileIndex: i,
+      filePercent: 100,
+      overallPercent: Math.min(
+        100,
+        Math.round((completedBytes / totalBytes) * 100),
+      ),
+      fileName: file.name,
+      filesCount: files.length,
+    });
+  }
+
+  return lastResult as T;
+}
+
 export const api = {
   register: (body: {
     username: string;
@@ -289,38 +437,54 @@ export const api = {
     ),
   deleteComment: (id: number) =>
     request<{ ok: boolean }>(`/api/comments/${id}`, { method: 'DELETE' }),
-  uploadTaskFile: (taskId: number, file: File) => {
-    const form = new FormData();
-    form.append('file', file);
-    return request<{ file: Attachment; files: Attachment[] }>(
+  uploadTaskFile: (
+    taskId: number,
+    file: File,
+    onProgress?: (event: UploadProgressEvent) => void,
+    signal?: AbortSignal,
+  ) =>
+    uploadFilesSequential<{ file: Attachment; files: Attachment[] }>(
       `/api/tasks/${taskId}/files`,
-      { method: 'POST', body: form },
-    );
-  },
-  uploadTaskFiles: (taskId: number, files: File[]) => {
-    const form = new FormData();
-    for (const file of files) form.append('file', file);
-    return request<{ file: Attachment; files: Attachment[] }>(
+      [file],
+      onProgress,
+      signal,
+    ),
+  uploadTaskFiles: (
+    taskId: number,
+    files: File[],
+    onProgress?: (event: UploadProgressEvent) => void,
+    signal?: AbortSignal,
+  ) =>
+    uploadFilesSequential<{ file: Attachment; files: Attachment[] }>(
       `/api/tasks/${taskId}/files`,
-      { method: 'POST', body: form },
-    );
-  },
-  uploadCommentFile: (commentId: number, file: File) => {
-    const form = new FormData();
-    form.append('file', file);
-    return request<{ file: Attachment; files: Attachment[] }>(
+      files,
+      onProgress,
+      signal,
+    ),
+  uploadCommentFile: (
+    commentId: number,
+    file: File,
+    onProgress?: (event: UploadProgressEvent) => void,
+    signal?: AbortSignal,
+  ) =>
+    uploadFilesSequential<{ file: Attachment; files: Attachment[] }>(
       `/api/comments/${commentId}/files`,
-      { method: 'POST', body: form },
-    );
-  },
-  uploadCommentFiles: (commentId: number, files: File[]) => {
-    const form = new FormData();
-    for (const file of files) form.append('file', file);
-    return request<{ file: Attachment; files: Attachment[] }>(
+      [file],
+      onProgress,
+      signal,
+    ),
+  uploadCommentFiles: (
+    commentId: number,
+    files: File[],
+    onProgress?: (event: UploadProgressEvent) => void,
+    signal?: AbortSignal,
+  ) =>
+    uploadFilesSequential<{ file: Attachment; files: Attachment[] }>(
       `/api/comments/${commentId}/files`,
-      { method: 'POST', body: form },
-    );
-  },
+      files,
+      onProgress,
+      signal,
+    ),
   attachmentUrl: (id: number, download = false) =>
     `${API_URL}/api/attachments/${id}${download ? '?download=1' : ''}`,
   deleteAttachment: (id: number) =>

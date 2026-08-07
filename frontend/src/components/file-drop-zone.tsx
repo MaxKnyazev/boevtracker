@@ -1,8 +1,100 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react';
+import { FileIcon, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export const MAX_UPLOAD_FILE_SIZE = 500 * 1024 * 1024;
+export type PendingUploadItem = {
+  id: string;
+  name: string;
+  size: number;
+  /** null = not uploading yet; 0–100 while uploading */
+  progress: number | null;
+  status?: 'pending' | 'uploading' | 'done' | 'error';
+};
 
+export function UploadProgressBar({
+  value,
+  className,
+}: {
+  value: number;
+  className?: string;
+}) {
+  const pct = Math.max(0, Math.min(100, Math.round(value)));
+  return (
+    <div
+      className={cn(
+        'h-1.5 w-full overflow-hidden rounded-full bg-muted',
+        className,
+      )}
+      role="progressbar"
+      aria-valuenow={pct}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
+      <div
+        className="h-full rounded-full bg-primary transition-[width] duration-150 ease-out"
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
+}
+
+export function PendingFileChip({
+  name,
+  progress = null,
+  status = 'pending',
+  disabled,
+  onRemove,
+  className,
+}: {
+  name: string;
+  progress?: number | null;
+  status?: PendingUploadItem['status'];
+  disabled?: boolean;
+  onRemove?: () => void;
+  className?: string;
+}) {
+  const showProgress =
+    status === 'uploading' || (progress != null && status !== 'done');
+  const pct = progress ?? 0;
+
+  return (
+    <div
+      className={cn(
+        'flex max-w-full flex-col gap-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs',
+        className,
+      )}
+    >
+      <div className="flex items-center gap-1.5">
+        <FileIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate" title={name}>
+          {name}
+        </span>
+        {showProgress && (
+          <span className="shrink-0 tabular-nums text-[10px] text-muted-foreground">
+            {Math.round(pct)}%
+          </span>
+        )}
+        {onRemove && status !== 'uploading' && (
+          <button
+            type="button"
+            className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            disabled={disabled}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            title="Убрать файл"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      {showProgress && <UploadProgressBar value={pct} />}
+    </div>
+  );
+}
+
+export const MAX_UPLOAD_FILE_SIZE = 500 * 1024 * 1024;
 function extensionFromMime(type: string): string {
   if (type === 'image/png') return 'png';
   if (type === 'image/jpeg') return 'jpg';
