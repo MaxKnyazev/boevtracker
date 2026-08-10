@@ -69,17 +69,24 @@ SSH в ISPmanager / REG.RU обычно включается в разделе �
 
 Обычный деплой занимает **несколько минут**, не десятки.
 
-**`vendor/` по FTP не заливается** — после FTP workflow по SSH сам делает `composer install --no-dev`, если на хостинге есть `composer`.  
-Если SSH-шаг ругается на отсутствие composer или пакет не появился: в Actions → **Run workflow** включите  
-**Also upload app_laravel/vendor** (медленно) **или** на сервере по SSH:
+**`vendor/` по FTP не заливается** (пофайловая заливка на shared hosting легко упирается в лимит ~90 мин).
+
+После FTP workflow по SSH:
+1. пытается `composer install --no-dev` (ставит `composer.phar`, если `composer` нет в PATH);
+2. либо, если в **Run workflow** включена галка vendor — заливает **один** `vendor.tar.gz` по SCP и распаковывает.
+
+Ручной запасной вариант по SSH (без GitHub):
 
 ```bash
 cd ~/www/boevsoft.ru/app_laravel
-composer install --no-dev --optimize-autoloader
+php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+php composer-setup.php
+php composer.phar install --no-dev --optimize-autoloader --no-interaction
 php artisan config:clear
+rm -f composer-setup.php
 ```
 
-Для realtime после добавления `pusher/pusher-php-server` без `composer install` на сервере  
+Для realtime после добавления `pusher/pusher-php-server` без обновлённого `vendor`  
 `POST /api/broadcasting/auth` отдаёт **500** (класс `Pusher\Pusher` не найден), хотя `/api/realtime/config` уже может вернуть `driver: pusher`.
 
 **Не затирает на сервере:**
