@@ -19,7 +19,11 @@ import { Input, Label } from '@/components/ui/input';
 import { TaskViewControls } from '@/components/task-view-controls';
 import { ProjectPage } from '@/pages/project';
 import { cn } from '@/lib/utils';
-import { DEFAULT_TASK_VIEW, type TaskViewState } from '@/lib/task-view';
+import {
+  taskViewStorageKey,
+  usePersistedTaskView,
+  type TaskViewState,
+} from '@/lib/task-view';
 import type { TaskBucketCounts } from '@/lib/task-buckets';
 
 const OVERVIEW_TAB = 'overview';
@@ -65,8 +69,9 @@ export function BoardDetailPage() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [error, setError] = useState('');
-  const [overviewView, setOverviewView] =
-    useState<TaskViewState>(DEFAULT_TASK_VIEW);
+  const [overviewView, setOverviewView] = usePersistedTaskView(
+    taskViewStorageKey.board(boardId ?? '0'),
+  );
   const [hiddenProjectIds, setHiddenProjectIds] = useState<Set<number>>(
     () => readHiddenProjectIds(boardId),
   );

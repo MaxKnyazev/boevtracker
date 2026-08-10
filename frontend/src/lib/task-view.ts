@@ -1,8 +1,10 @@
+import { useCallback, useEffect, useState } from 'react';
 import type { Task, User } from '@/lib/api';
 import { displayName } from '@/components/user-avatar';
 
 export type TaskSortField =
   | 'order'
+  | 'createdAt'
   | 'title'
   | 'board'
   | 'project'
@@ -38,8 +40,8 @@ export type TaskViewState = {
 };
 
 export const DEFAULT_TASK_VIEW: TaskViewState = {
-  sortField: 'order',
-  sortDir: 'asc',
+  sortField: 'createdAt',
+  sortDir: 'desc',
   board: 'all',
   project: 'all',
   priority: 'all',
@@ -47,6 +49,144 @@ export const DEFAULT_TASK_VIEW: TaskViewState = {
   statusTime: 'all',
   assignee: 'all',
 };
+
+export const taskViewStorageKey = {
+  tasks: 'boevtracker.taskView.tasks',
+  board: (boardId: string | number) =>
+    `boevtracker.taskView.board.${boardId}`,
+  project: (projectId: string | number) =>
+    `boevtracker.taskView.project.${projectId}`,
+} as const;
+
+const SORT_FIELDS: ReadonlySet<string> = new Set([
+  'order',
+  'createdAt',
+  'title',
+  'board',
+  'project',
+  'status',
+  'priority',
+  'deadline',
+  'statusTime',
+  'assignee',
+]);
+const SORT_DIRS: ReadonlySet<string> = new Set(['asc', 'desc']);
+const DEADLINE_FILTERS: ReadonlySet<string> = new Set([
+  'all',
+  'with',
+  'without',
+  'overdue',
+  'week',
+]);
+const STATUS_TIME_FILTERS: ReadonlySet<string> = new Set([
+  'all',
+  '1d',
+  '3d',
+  '7d',
+  '30d',
+]);
+
+function parseTaskView(raw: unknown): TaskViewState | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const v = raw as Record<string, unknown>;
+
+  const sortField = SORT_FIELDS.has(String(v.sortField))
+    ? (v.sortField as TaskSortField)
+    : DEFAULT_TASK_VIEW.sortField;
+  const sortDir = SORT_DIRS.has(String(v.sortDir))
+    ? (v.sortDir as TaskSortDir)
+    : DEFAULT_TASK_VIEW.sortDir;
+  const deadline = DEADLINE_FILTERS.has(String(v.deadline))
+    ? (v.deadline as DeadlineFilter)
+    : DEFAULT_TASK_VIEW.deadline;
+  const statusTime = STATUS_TIME_FILTERS.has(String(v.statusTime))
+    ? (v.statusTime as StatusTimeFilter)
+    : DEFAULT_TASK_VIEW.statusTime;
+
+  const asIdOrAll = (value: unknown, allowNone = false): string => {
+    if (value === 'all') return 'all';
+    if (allowNone && value === 'none') return 'none';
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    if (typeof value === 'string' && /^\d+$/.test(value)) return value;
+    if (
+      typeof value === 'string' &&
+      (value === 'LOW' ||
+        value === 'MEDIUM' ||
+        value === 'HIGH' ||
+        value === 'CRITICAL')
+    ) {
+      return value;
+    }
+    return 'all';
+  };
+
+  const priority =
+    v.priority === 'all' ||
+    v.priority === 'LOW' ||
+    v.priority === 'MEDIUM' ||
+    v.priority === 'HIGH' ||
+    v.priority === 'CRITICAL'
+      ? String(v.priority)
+      : DEFAULT_TASK_VIEW.priority;
+
+  return {
+    sortField,
+    sortDir,
+    board: asIdOrAll(v.board),
+    project: asIdOrAll(v.project),
+    priority,
+    deadline,
+    statusTime,
+    assignee: asIdOrAll(v.assignee, true),
+  };
+}
+
+export function readTaskView(storageKey: string): TaskViewState {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return { ...DEFAULT_TASK_VIEW };
+    const parsed = parseTaskView(JSON.parse(raw));
+    return parsed ?? { ...DEFAULT_TASK_VIEW };
+  } catch {
+    return { ...DEFAULT_TASK_VIEW };
+  }
+}
+
+export function writeTaskView(storageKey: string, view: TaskViewState): void {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(view));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+export function usePersistedTaskView(
+  storageKey: string,
+): [
+  TaskViewState,
+  (
+    next: TaskViewState | ((prev: TaskViewState) => TaskViewState),
+  ) => void,
+] {
+  const [view, setViewState] = useState(() => readTaskView(storageKey));
+
+  useEffect(() => {
+    setViewState(readTaskView(storageKey));
+  }, [storageKey]);
+
+  const setView = useCallback(
+    (next: TaskViewState | ((prev: TaskViewState) => TaskViewState)) => {
+      setViewState((prev) => {
+        const value = typeof next === 'function' ? next(prev) : next;
+        writeTaskView(storageKey, value);
+        return value;
+      });
+    },
+    [storageKey],
+  );
+
+  return [view, setView];
+}
 
 const PRIORITY_RANK: Record<string, number> = {
   CRITICAL: 0,
@@ -59,14 +199,14 @@ const DAY_MS = 86_400_000;
 
 export function hasActiveTaskView(view: TaskViewState): boolean {
   return (
-    view.sortField !== 'order' ||
+    view.sortField !== DEFAULT_TASK_VIEW.sortField ||
+    view.sortDir !== DEFAULT_TASK_VIEW.sortDir ||
     view.board !== 'all' ||
     view.project !== 'all' ||
     view.priority !== 'all' ||
     view.deadline !== 'all' ||
     view.statusTime !== 'all' ||
-    view.assignee !== 'all' ||
-    (view.sortField === 'order' && view.sortDir !== 'asc')
+    view.assignee !== 'all'
   );
 }
 
@@ -172,6 +312,12 @@ export function sortTasks(tasks: Task[], view: TaskViewState): Task[] {
         const pa = PRIORITY_RANK[a.priority] ?? 99;
         const pb = PRIORITY_RANK[b.priority] ?? 99;
         cmp = sortDir === 'asc' ? pa - pb : pb - pa;
+        break;
+      }
+      case 'createdAt': {
+        const ca = new Date(a.createdAt).getTime();
+        const cb = new Date(b.createdAt).getTime();
+        cmp = sortDir === 'asc' ? ca - cb : cb - ca;
         break;
       }
       case 'deadline': {

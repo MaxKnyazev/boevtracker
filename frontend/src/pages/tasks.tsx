@@ -15,6 +15,8 @@ import {
 import {
   DEFAULT_TASK_VIEW,
   applyTaskView,
+  taskViewStorageKey,
+  usePersistedTaskView,
   type TaskSortField,
   type TaskViewState,
 } from '@/lib/task-view';
@@ -33,7 +35,7 @@ export function TasksPage() {
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [view, setView] = useState<TaskViewState>(DEFAULT_TASK_VIEW);
+  const [view, setView] = usePersistedTaskView(taskViewStorageKey.tasks);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [error, setError] = useState('');
@@ -94,13 +96,23 @@ export function TasksPage() {
   }, [tasks, view.board]);
 
   useEffect(() => {
+    if (loading) return;
+
+    if (
+      view.board !== 'all' &&
+      !boards.some((b) => b.value === view.board)
+    ) {
+      setView((prev) => ({ ...prev, board: 'all', project: 'all' }));
+      return;
+    }
+
     if (
       view.project !== 'all' &&
       !projects.some((p) => p.value === view.project)
     ) {
       setView((prev) => ({ ...prev, project: 'all' }));
     }
-  }, [projects, view.project]);
+  }, [loading, boards, projects, view.board, view.project, setView]);
 
   const visibleTasks = useMemo(
     () => applyTaskView(tasks, view),
@@ -120,12 +132,27 @@ export function TasksPage() {
   const cycleSort = (field: Exclude<TaskSortField, 'order'>) => {
     setView((prev) => {
       if (prev.sortField !== field) {
-        return { ...prev, sortField: field, sortDir: 'asc' };
+        return {
+          ...prev,
+          sortField: field,
+          sortDir: field === 'createdAt' ? 'desc' : 'asc',
+        };
       }
-      if (prev.sortDir === 'asc') {
-        return { ...prev, sortDir: 'desc' };
+      if (
+        field === 'createdAt'
+          ? prev.sortDir === 'desc'
+          : prev.sortDir === 'asc'
+      ) {
+        return {
+          ...prev,
+          sortDir: prev.sortDir === 'asc' ? 'desc' : 'asc',
+        };
       }
-      return { ...prev, sortField: 'order', sortDir: 'asc' };
+      return {
+        ...prev,
+        sortField: DEFAULT_TASK_VIEW.sortField,
+        sortDir: DEFAULT_TASK_VIEW.sortDir,
+      };
     });
   };
 
@@ -202,6 +229,12 @@ export function TasksPage() {
                   onCycle={cycleSort}
                 />
                 <SortableTh
+                  label="Создана"
+                  field="createdAt"
+                  view={view}
+                  onCycle={cycleSort}
+                />
+                <SortableTh
                   label="Дедлайн"
                   field="deadline"
                   view={view}
@@ -274,6 +307,9 @@ export function TasksPage() {
                           : 'Без исполнителя'}
                       </span>
                     </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-muted-foreground">
+                    {formatDate(task.createdAt)}
                   </td>
                   <td className="px-3 py-2.5 text-muted-foreground">
                     {formatDate(task.deadline)}
