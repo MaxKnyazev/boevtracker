@@ -99,6 +99,13 @@ jobs:
           script: |
             set -e
             cd "$APP_DIR"
+            if command -v composer >/dev/null 2>&1; then
+              composer install --no-dev --optimize-autoloader --no-interaction
+            elif [ -f composer.phar ]; then
+              php composer.phar install --no-dev --optimize-autoloader --no-interaction
+            else
+              echo "WARN: composer not found; skip vendor update (upload vendor via workflow_dispatch if needed)"
+            fi
             php artisan migrate --force --no-interaction
             php artisan config:clear
             php artisan route:clear
