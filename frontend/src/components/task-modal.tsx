@@ -195,11 +195,20 @@ export function TaskModal({
     null,
   );
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatListRef = useRef<HTMLDivElement | null>(null);
   const chatFileInputRef = useRef<HTMLInputElement | null>(null);
   const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
   const commentComposerRef = useRef<HTMLDivElement | null>(null);
+  const dialogContentRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const prevCommentsCountRef = useRef<number | null>(null);
+
+  const scrollModalToTop = () => {
+    const el = dialogContentRef.current;
+    if (!el) return;
+    el.scrollTop = 0;
+  };
 
   const load = async () => {
     try {
@@ -253,8 +262,29 @@ export function TaskModal({
   }, []);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const count = task?.comments?.length ?? 0;
+    const prev = prevCommentsCountRef.current;
+    prevCommentsCountRef.current = count;
+    // Only auto-scroll the chat panel when new comments arrive — not on first open.
+    if (prev == null || count <= prev) return;
+    const list = chatListRef.current;
+    if (list) {
+      list.scrollTop = list.scrollHeight;
+      return;
+    }
+    chatEndRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [task?.comments?.length]);
+
+  useEffect(() => {
+    prevCommentsCountRef.current = null;
+  }, [taskId]);
+
+  useEffect(() => {
+    if (minimized || !task) return;
+    scrollModalToTop();
+    const id = window.requestAnimationFrame(() => scrollModalToTop());
+    return () => window.cancelAnimationFrame(id);
+  }, [taskId, task?.id, minimized]);
 
   const saveField = async (data: Record<string, unknown>) => {
     if (!writable) return;
@@ -544,7 +574,15 @@ export function TaskModal({
       {!minimized && (
       <Dialog open onOpenChange={handleDialogOpenChange}>
         <DialogContent
-          className="max-h-[90vh] max-w-4xl overflow-hidden p-0"
+          ref={dialogContentRef}
+          className="max-h-[min(90vh,calc(100%-2rem))] max-w-4xl overflow-x-hidden overflow-y-auto overscroll-contain p-0"
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            scrollModalToTop();
+            dialogContentRef.current?.setAttribute('tabindex', '-1');
+            dialogContentRef.current?.focus({ preventScroll: true });
+          }}
+          tabIndex={-1}
           onPointerDownOutside={blockOutsideWhileLightbox}
           onInteractOutside={blockOutsideWhileLightbox}
           onFocusOutside={blockOutsideWhileLightbox}
@@ -558,7 +596,7 @@ export function TaskModal({
         >
         <button
           type="button"
-          className="absolute right-12 top-4 rounded-sm opacity-70 hover:opacity-100"
+          className="absolute right-12 top-4 z-10 rounded-sm opacity-70 hover:opacity-100"
           title={isFileUploadActive ? 'Свернуть (загрузка продолжится)' : 'Свернуть'}
           onClick={() => {
             // While uploading, close the modal so the global dock stays visible.
@@ -571,7 +609,7 @@ export function TaskModal({
         >
           <Minus className="h-4 w-4" />
         </button>
-        <div className="max-h-[90vh] overflow-y-auto p-6 [scrollbar-gutter:stable]">
+        <div className="p-6 [scrollbar-gutter:stable]">
           <DialogHeader>
             <DialogTitle className="sr-only">{task.title}</DialogTitle>
             <div className="flex min-h-11 min-w-0 items-start gap-2 pr-14">
@@ -850,7 +888,10 @@ export function TaskModal({
                   </span>
                 </div>
 
-                <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+                <div
+                  ref={chatListRef}
+                  className="flex-1 space-y-3 overflow-y-auto px-3 py-3"
+                >
                   {comments.length === 0 ? (
                     <div className="flex h-full min-h-[160px] items-center justify-center text-center text-sm text-muted-foreground">
                       Пока нет сообщений
