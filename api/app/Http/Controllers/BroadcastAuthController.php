@@ -41,15 +41,36 @@ class BroadcastAuthController extends Controller
             return response()->json(['error' => 'Неизвестный канал'], 403);
         }
 
-        $pusher = new Pusher(
-            (string) config('broadcasting.connections.pusher.key'),
-            (string) config('broadcasting.connections.pusher.secret'),
-            (string) config('broadcasting.connections.pusher.app_id'),
-            config('broadcasting.connections.pusher.options', []),
-        );
+        if (! class_exists(Pusher::class)) {
+            return response()->json([
+                'error' => 'Pusher SDK не установлен. На сервере выполните: composer install --no-dev',
+            ], 500);
+        }
 
-        $auth = $pusher->authorizeChannel($channelName, $socketId);
+        try {
+            $options = config('broadcasting.connections.pusher.options', []);
+            // Empty host breaks cluster resolution in some SDK setups.
+            if (! filled($options['host'] ?? null)) {
+                unset($options['host']);
+            }
 
-        return response()->json(json_decode($auth, true, 512, JSON_THROW_ON_ERROR));
+            $pusher = new Pusher(
+                (string) config('broadcasting.connections.pusher.key'),
+                (string) config('broadcasting.connections.pusher.secret'),
+                (string) config('broadcasting.connections.pusher.app_id'),
+                $options,
+            );
+
+            $auth = $pusher->authorizeChannel($channelName, $socketId);
+
+            return response()->json(json_decode($auth, true, 512, JSON_THROW_ON_ERROR));
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'error' => 'Ошибка авторизации канала',
+                'detail' => config('app.debug') ? $e->getMessage() : null,
+            ], 500);
+        }
     }
 }

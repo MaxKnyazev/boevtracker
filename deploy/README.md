@@ -69,14 +69,18 @@ SSH в ISPmanager / REG.RU обычно включается в разделе �
 
 Обычный деплой занимает **несколько минут**, не десятки.
 
-**`vendor/` по FTP не заливается** — он уже на сервере после первой ручной установки.  
-Если обновили PHP-зависимости (`composer.lock`), в Actions → **Run workflow** включите  
+**`vendor/` по FTP не заливается** — после FTP workflow по SSH сам делает `composer install --no-dev`, если на хостинге есть `composer`.  
+Если SSH-шаг ругается на отсутствие composer или пакет не появился: в Actions → **Run workflow** включите  
 **Also upload app_laravel/vendor** (медленно) **или** на сервере по SSH:
 
 ```bash
 cd ~/www/boevsoft.ru/app_laravel
 composer install --no-dev --optimize-autoloader
+php artisan config:clear
 ```
+
+Для realtime после добавления `pusher/pusher-php-server` без `composer install` на сервере  
+`POST /api/broadcasting/auth` отдаёт **500** (класс `Pusher\Pusher` не найден), хотя `/api/realtime/config` уже может вернуть `driver: pusher`.
 
 **Не затирает на сервере:**
 
