@@ -145,8 +145,8 @@ class NotificationService
         if (Broadcasting::enabled()) {
             try {
                 broadcast(new UserNotificationCreated($notification));
-            } catch (\Throwable) {
-                // Realtime is best-effort; DB notification already saved.
+            } catch (\Throwable $e) {
+                report($e);
             }
         }
     }

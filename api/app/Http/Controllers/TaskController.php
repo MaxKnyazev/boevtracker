@@ -33,8 +33,8 @@ class TaskController extends Controller
         if (Broadcasting::enabled()) {
             try {
                 broadcast(new TaskUpdated($taskId));
-            } catch (\Throwable) {
-                // Realtime is best-effort.
+            } catch (\Throwable $e) {
+                report($e);
             }
         }
     }
