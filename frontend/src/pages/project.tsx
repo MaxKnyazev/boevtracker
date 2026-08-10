@@ -671,107 +671,108 @@ export function ProjectPage({
           />
         )}
 
-        <div className="kanban-scroll w-full overflow-x-auto pb-4">
-          <div className="mx-auto flex flex-col" style={projectShellStyle}>
-            {embedded ? (
-              embeddedToolbar || writable || showTaskViewControls ? (
-                <div className="mb-4 space-y-3">
-                  {(embeddedToolbar || writable) && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      {embeddedToolbar ? (
-                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                          {embeddedToolbar}
-                        </div>
-                      ) : (
-                        <div className="min-w-0 flex-1" />
-                      )}
-                      {statusTaskActions}
-                    </div>
-                  )}
-                  {showTaskViewControls && (
-                    <TaskViewControls
-                      view={taskView}
-                      onChange={setTaskView}
-                      users={viewUsers}
-                    />
-                  )}
-                </div>
-              ) : null
-            ) : (
-              <>
-                <PageHeader
-                  title={project?.name || 'Проект'}
-                  description={
-                    project?.board ? `Доска: ${project.board.name}` : undefined
-                  }
-                  actions={statusTaskActions || undefined}
-                />
+        <div className="w-full">
+          {embedded ? (
+            embeddedToolbar || writable || showTaskViewControls ? (
+              <div className="mb-4 space-y-3">
+                {(embeddedToolbar || writable) && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {embeddedToolbar ? (
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                        {embeddedToolbar}
+                      </div>
+                    ) : (
+                      <div className="min-w-0 flex-1" />
+                    )}
+                    {statusTaskActions}
+                  </div>
+                )}
                 {showTaskViewControls && (
                   <TaskViewControls
                     view={taskView}
                     onChange={setTaskView}
                     users={viewUsers}
-                    className="mb-4"
                   />
                 )}
-              </>
-            )}
+              </div>
+            ) : null
+          ) : (
+            <>
+              <PageHeader
+                title={project?.name || 'Проект'}
+                description={
+                  project?.board ? `Доска: ${project.board.name}` : undefined
+                }
+                actions={statusTaskActions || undefined}
+              />
+              {showTaskViewControls && (
+                <TaskViewControls
+                  view={taskView}
+                  onChange={setTaskView}
+                  users={viewUsers}
+                  className="mb-4"
+                />
+              )}
+            </>
+          )}
 
-            <div className="flex w-full items-stretch overflow-hidden rounded-xl border border-border bg-card/60">
-              {project?.statuses.map((status, index) => {
-                const columnId = statusKey(status.id);
-                const taskIds = visibleColumns[columnId] || [];
-                const isLast = index === project.statuses.length - 1;
-                return (
-                  <KanbanColumn
-                    key={status.id}
-                    id={columnId}
-                    title={status.name}
-                    count={taskIds.length}
-                    isLast={isLast}
-                    isEmpty={taskIds.length === 0}
-                  >
-                    <SortableContext
-                      items={taskIds}
-                      strategy={verticalListSortingStrategy}
-                      disabled={!writable}
+          <div className="kanban-scroll w-full overflow-x-auto pb-4">
+            <div className="mx-auto flex flex-col" style={projectShellStyle}>
+              <div className="flex w-full items-stretch overflow-hidden rounded-xl border border-border bg-card/60">
+                {project?.statuses.map((status, index) => {
+                  const columnId = statusKey(status.id);
+                  const taskIds = visibleColumns[columnId] || [];
+                  const isLast = index === project.statuses.length - 1;
+                  return (
+                    <KanbanColumn
+                      key={status.id}
+                      id={columnId}
+                      title={status.name}
+                      count={taskIds.length}
+                      isLast={isLast}
+                      isEmpty={taskIds.length === 0}
                     >
-                      <div className="flex min-h-full flex-1 flex-col gap-2">
-                        {taskIds.map((id) => {
-                          const task = tasksById.get(parseTaskKey(id) ?? -1);
-                          if (!task) return null;
-                          return (
-                            <SortableTask
-                              key={id}
-                              id={id}
-                              task={task}
-                              users={users}
-                              writable={writable}
-                              onOpen={() => setSelectedTaskId(task.id)}
-                              onMoveBoard={() => setMoveTask(task)}
-                              onAssign={async (assigneeId) => {
-                                await api.updateTask(task.id, { assigneeId });
-                                await load();
-                              }}
-                            />
-                          );
-                        })}
-                        {taskIds.length === 0 && (
-                          <div className="flex min-h-[240px] flex-1 items-center justify-center px-2 py-8 text-center text-xs text-muted-foreground">
-                            {(columns[columnId] || []).length > 0
-                              ? 'Нет задач по фильтру'
-                              : 'Перетащите задачу сюда'}
-                          </div>
-                        )}
-                      </div>
-                    </SortableContext>
-                  </KanbanColumn>
-                );
-              })}
+                      <SortableContext
+                        items={taskIds}
+                        strategy={verticalListSortingStrategy}
+                        disabled={!writable}
+                      >
+                        <div className="flex min-h-full flex-1 flex-col gap-2">
+                          {taskIds.map((id) => {
+                            const task = tasksById.get(parseTaskKey(id) ?? -1);
+                            if (!task) return null;
+                            return (
+                              <SortableTask
+                                key={id}
+                                id={id}
+                                task={task}
+                                users={users}
+                                writable={writable}
+                                onOpen={() => setSelectedTaskId(task.id)}
+                                onMoveBoard={() => setMoveTask(task)}
+                                onAssign={async (assigneeId) => {
+                                  await api.updateTask(task.id, { assigneeId });
+                                  await load();
+                                }}
+                              />
+                            );
+                          })}
+                          {taskIds.length === 0 && (
+                            <div className="flex min-h-[240px] flex-1 items-center justify-center px-2 py-8 text-center text-xs text-muted-foreground">
+                              {(columns[columnId] || []).length > 0
+                                ? 'Нет задач по фильтру'
+                                : 'Перетащите задачу сюда'}
+                            </div>
+                          )}
+                        </div>
+                      </SortableContext>
+                    </KanbanColumn>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
-
         <DragOverlay dropAnimation={dropAnimation}>
           {activeTask ? (
             <div
