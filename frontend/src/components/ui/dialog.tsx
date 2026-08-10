@@ -7,31 +7,32 @@ export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogClose = DialogPrimitive.Close;
 
-export function DialogContent({
-  className,
-  children,
-  ...props
-}: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>) {
+export const DialogContent = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
+>(function DialogContent({ className, children, ...props }, ref) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <DialogPrimitive.Content
+          ref={ref}
           className={cn(
-            'pointer-events-auto relative grid w-full max-w-2xl gap-4 overflow-x-hidden overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl max-h-[min(90vh,100%)]',
+            'pointer-events-auto relative grid w-full max-w-2xl gap-4 overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-6 shadow-xl max-h-[min(90vh,calc(100%-2rem))]',
             className,
           )}
           {...props}
         >
           {children}
-          <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 hover:opacity-100">
+          <DialogPrimitive.Close className="absolute right-4 top-4 z-10 rounded-sm opacity-70 hover:opacity-100">
             <X className="h-4 w-4" />
           </DialogPrimitive.Close>
         </DialogPrimitive.Content>
       </div>
     </DialogPrimitive.Portal>
   );
-}
+});
+DialogContent.displayName = 'DialogContent';
 
 export function DialogHeader({
   className,
