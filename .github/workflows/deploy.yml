@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       include_vendor:
-        description: "Also upload app_laravel/vendor (slow, only when composer.lock changed)"
+        description: "Also sync app_laravel/vendor as one tar.gz over SSH (use when composer.lock changed / no composer on host)"
         type: boolean
         default: false
 
@@ -18,7 +18,7 @@ jobs:
   deploy:
     name: Build and FTP deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -41,8 +41,16 @@ jobs:
           INCLUDE_VENDOR: ${{ github.event.inputs.include_vendor == 'true' && '1' || '0' }}
         run: node scripts/build-shared-deploy.mjs
 
-      - name: Deploy via FTP (app only)
-        if: ${{ github.event.inputs.include_vendor != 'true' }}
+      - name: Pack vendor archive
+        if: ${{ github.event.inputs.include_vendor == 'true' }}
+        run: |
+          set -e
+          test -d dist-deploy/app_laravel/vendor
+          tar -C dist-deploy/app_laravel -czf vendor.tar.gz vendor
+          ls -lh vendor.tar.gz
+
+      # Always FTP without vendor — file-by-file vendor upload times out on shared hosting.
+      - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_HOST }}
@@ -64,29 +72,20 @@ jobs:
             **/storage/app/uploads/**
             !**/storage/app/uploads/.gitignore
 
-      - name: Deploy via FTP (with vendor)
+      - name: Upload vendor.tar.gz via SCP
         if: ${{ github.event.inputs.include_vendor == 'true' }}
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        uses: appleboy/scp-action@v0.1.7
         with:
-          server: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./dist-deploy/
-          server-dir: ${{ secrets.FTP_SERVER_DIR }}
-          timeout: 1800000
-          exclude: |
-            **/.env
-            **/.env.*
-            **/node_modules/**
-            **/.git*
-            **/storage/logs/**
-            **/storage/framework/cache/data/**
-            **/storage/framework/sessions/**
-            **/storage/framework/views/**
-            **/storage/app/uploads/**
-            !**/storage/app/uploads/.gitignore
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          source: vendor.tar.gz
+          target: ${{ secrets.SSH_APP_DIR }}
+          overwrite: true
 
-      - name: Apply migrations (SSH)
+      - name: Apply migrations / vendor (SSH)
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -95,19 +94,48 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           script_stop: true
-          envs: APP_DIR
+          envs: APP_DIR,SYNC_VENDOR
           script: |
             set -e
             cd "$APP_DIR"
-            if command -v composer >/dev/null 2>&1; then
-              composer install --no-dev --optimize-autoloader --no-interaction
-            elif [ -f composer.phar ]; then
-              php composer.phar install --no-dev --optimize-autoloader --no-interaction
+
+            if [ "$SYNC_VENDOR" = "true" ] && [ -f vendor.tar.gz ]; then
+              echo "Extracting vendor.tar.gz..."
+              rm -rf vendor
+              tar -xzf vendor.tar.gz
+              rm -f vendor.tar.gz
+              test -f vendor/autoload.php
+              echo "Vendor synced from archive."
             else
-              echo "WARN: composer not found; skip vendor update (upload vendor via workflow_dispatch if needed)"
+              # Prefer composer on host when available (keeps vendor in sync without bulky uploads).
+              PHP_BIN="php"
+              for candidate in php8.3 php8.2 php8.1 php; do
+                if command -v "$candidate" >/dev/null 2>&1; then
+                  PHP_BIN="$candidate"
+                  break
+                fi
+              done
+
+              if command -v composer >/dev/null 2>&1; then
+                composer install --no-dev --optimize-autoloader --no-interaction
+              else
+                if [ ! -f composer.phar ]; then
+                  echo "Bootstrapping composer.phar..."
+                  "$PHP_BIN" -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+                  "$PHP_BIN" composer-setup.php --quiet
+                  rm -f composer-setup.php
+                fi
+                if [ -f composer.phar ]; then
+                  "$PHP_BIN" composer.phar install --no-dev --optimize-autoloader --no-interaction
+                else
+                  echo "WARN: composer unavailable; vendor not updated"
+                fi
+              fi
             fi
+
             php artisan migrate --force --no-interaction
             php artisan config:clear
             php artisan route:clear
         env:
           APP_DIR: ${{ secrets.SSH_APP_DIR }}
+          SYNC_VENDOR: ${{ github.event.inputs.include_vendor == 'true' && 'true' || 'false' }}
