@@ -186,7 +186,8 @@ export function TaskViewControls({
                 patch({ sortField: v as TaskSortField })
               }
               options={[
-                { value: 'order', label: 'По умолчанию' },
+                { value: 'createdAt', label: 'Дата создания' },
+                { value: 'order', label: 'Порядок на доске' },
                 { value: 'priority', label: 'Приоритет' },
                 { value: 'deadline', label: 'Дедлайн' },
                 { value: 'statusTime', label: 'Время в статусе' },

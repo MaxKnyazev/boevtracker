@@ -1366,6 +1366,8 @@ export function TaskModal({
                 )}
               </Meta>
 
+              <Meta label="Создана">{formatDate(task.createdAt)}</Meta>
+
               <Meta label="В статусе">
                 {formatDuration(task.statusChangedAt)}
               </Meta>

@@ -56,8 +56,9 @@ import {
 } from '@/components/file-drop-zone';
 import { useUploadsStore } from '@/store/uploads';
 import {
-  DEFAULT_TASK_VIEW,
   applyTaskView,
+  taskViewStorageKey,
+  usePersistedTaskView,
   type TaskViewState,
 } from '@/lib/task-view';
 import {
@@ -212,8 +213,9 @@ export function ProjectPage({
   const [error, setError] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dragWidth, setDragWidth] = useState<number | null>(null);
-  const [localTaskView, setLocalTaskView] =
-    useState<TaskViewState>(DEFAULT_TASK_VIEW);
+  const [localTaskView, setLocalTaskView] = usePersistedTaskView(
+    taskViewStorageKey.project(projectId),
+  );
 
   const taskView = taskViewProp ?? localTaskView;
   const setTaskView = onTaskViewChange ?? setLocalTaskView;

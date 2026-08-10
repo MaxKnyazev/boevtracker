@@ -223,8 +223,12 @@ export function TaskCard({
         {truncate(task.description)}
       </div>
 
-      <div className="text-xs text-muted-foreground">
-        В статусе {formatDuration(task.statusChangedAt)}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+        <span>Создана {formatDate(task.createdAt)}</span>
+        <span className="text-border" aria-hidden>
+          ·
+        </span>
+        <span>В статусе {formatDuration(task.statusChangedAt)}</span>
       </div>
     </div>
   );
