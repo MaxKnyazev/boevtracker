@@ -29,21 +29,35 @@ type Props = Omit<
   users: MentionUser[];
 };
 
+type MenuPos = {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+  openUp: boolean;
+};
+
 export const MentionsTextarea = forwardRef<HTMLTextAreaElement, Props>(
   function MentionsTextarea(
     { value, onChange, users, onKeyDown, className, ...props },
     ref,
   ) {
     const localRef = useRef<HTMLTextAreaElement | null>(null);
+    const menuRef = useRef<HTMLDivElement | null>(null);
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [mentionStart, setMentionStart] = useState(0);
     const [active, setActive] = useState(0);
-    const [openUp, setOpenUp] = useState(false);
+    const [menuPos, setMenuPos] = useState<MenuPos | null>(null);
 
     useImperativeHandle(ref, () => localRef.current as HTMLTextAreaElement);
 
     const matches = open ? filterMentionUsers(users, query) : [];
+
+    const queryRef = useRef(query);
+    queryRef.current = query;
+    const openRef = useRef(open);
+    openRef.current = open;
 
     const syncMentionState = (text: string, caret: number) => {
       const mention = getMentionQueryAt(text, caret);
@@ -51,23 +65,68 @@ export const MentionsTextarea = forwardRef<HTMLTextAreaElement, Props>(
         setOpen(false);
         return;
       }
+      const queryChanged = mention.query !== queryRef.current;
       setMentionStart(mention.start);
       setQuery(mention.query);
       setOpen(true);
-      setActive(0);
+      if (queryChanged || !openRef.current) {
+        setActive(0);
+      }
     };
 
     useLayoutEffect(() => {
-      if (!open) return;
+      if (!open || matches.length === 0) {
+        setMenuPos(null);
+        return;
+      }
       const el = localRef.current;
       if (!el) return;
-      const rect = el.getBoundingClientRect();
-      setOpenUp(rect.bottom + 220 > window.innerHeight);
+
+      const place = () => {
+        const rect = el.getBoundingClientRect();
+        const width = Math.max(rect.width, 220);
+        const estimatedItem = 40;
+        const estimatedHeight = Math.min(
+          matches.length * estimatedItem + 8,
+          224,
+        );
+        const gap = 4;
+        const spaceBelow = window.innerHeight - rect.bottom - gap - 8;
+        const spaceAbove = rect.top - gap - 8;
+        const openUp =
+          spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+        const maxHeight = Math.max(
+          80,
+          Math.min(224, openUp ? spaceAbove : spaceBelow),
+        );
+        const left = Math.min(
+          Math.max(8, rect.left),
+          window.innerWidth - width - 8,
+        );
+        const top = openUp ? rect.top - gap : rect.bottom + gap;
+        setMenuPos({ top, left, width, maxHeight, openUp });
+      };
+
+      place();
+      window.addEventListener('resize', place);
+      window.addEventListener('scroll', place, true);
+      return () => {
+        window.removeEventListener('resize', place);
+        window.removeEventListener('scroll', place, true);
+      };
     }, [open, value, matches.length]);
 
     useEffect(() => {
       if (active >= matches.length) setActive(0);
     }, [matches.length, active]);
+
+    useEffect(() => {
+      if (!open || !menuRef.current) return;
+      const activeEl = menuRef.current.querySelector<HTMLElement>(
+        `[data-mention-index="${active}"]`,
+      );
+      activeEl?.scrollIntoView({ block: 'nearest' });
+    }, [active, open]);
 
     const applyUser = (user: MentionUser) => {
       const el = localRef.current;
@@ -109,6 +168,55 @@ export const MentionsTextarea = forwardRef<HTMLTextAreaElement, Props>(
       onKeyDown?.(e);
     };
 
+    const menu =
+      open && matches.length > 0 && menuPos
+        ? createPortal(
+            <div
+              ref={menuRef}
+              data-mention-picker
+              className="fixed z-[300] overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+              style={{
+                top: menuPos.openUp ? undefined : menuPos.top,
+                bottom: menuPos.openUp
+                  ? window.innerHeight - menuPos.top
+                  : undefined,
+                left: menuPos.left,
+                width: menuPos.width,
+                maxHeight: menuPos.maxHeight,
+              }}
+            >
+              {matches.map((user, index) => (
+                <button
+                  key={user.id}
+                  type="button"
+                  data-mention-index={index}
+                  className={cn(
+                    'flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none',
+                    index === active
+                      ? 'bg-accent text-accent-foreground'
+                      : 'hover:bg-accent/60',
+                  )}
+                  onMouseEnter={() => setActive(index)}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    applyUser(user);
+                  }}
+                >
+                  <UserAvatar user={user} size="sm" />
+                  <span className="min-w-0 flex-1 truncate font-medium">
+                    {displayName(user)}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    @{user.username}
+                  </span>
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null;
+
     return (
       <div className="relative min-w-0 flex-1">
         <Textarea
@@ -123,6 +231,15 @@ export const MentionsTextarea = forwardRef<HTMLTextAreaElement, Props>(
             syncMentionState(next, caret);
           }}
           onKeyUp={(e) => {
+            if (
+              e.key === 'ArrowUp' ||
+              e.key === 'ArrowDown' ||
+              e.key === 'Enter' ||
+              e.key === 'Tab' ||
+              e.key === 'Escape'
+            ) {
+              return;
+            }
             const el = e.currentTarget;
             syncMentionState(el.value, el.selectionStart ?? el.value.length);
           }}
@@ -141,43 +258,7 @@ export const MentionsTextarea = forwardRef<HTMLTextAreaElement, Props>(
           }}
           onKeyDown={handleKeyDown}
         />
-
-        {open && matches.length > 0 && (
-          <div
-            className={cn(
-              'absolute left-0 z-[80] max-h-56 min-w-[220px] overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md',
-              openUp ? 'bottom-full mb-1' : 'top-full mt-1',
-            )}
-            style={{ width: 'max(100%, 220px)' }}
-          >
-            {matches.map((user, index) => (
-              <button
-                key={user.id}
-                type="button"
-                className={cn(
-                  'flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none',
-                  index === active
-                    ? 'bg-accent text-accent-foreground'
-                    : 'hover:bg-accent/60',
-                )}
-                onMouseEnter={() => setActive(index)}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  applyUser(user);
-                }}
-              >
-                <UserAvatar user={user} size="sm" />
-                <span className="min-w-0 flex-1 truncate font-medium">
-                  {displayName(user)}
-                </span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  @{user.username}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
+        {menu}
       </div>
     );
   },
