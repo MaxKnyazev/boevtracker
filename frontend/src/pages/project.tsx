@@ -242,6 +242,7 @@ export function ProjectPage({
     assigneeIds: number[];
     assignees: NonNullable<Task['assignees']>;
   } | null>(null);
+  const [showAllClosed, setShowAllClosed] = useState(false);
 
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
@@ -280,6 +281,10 @@ export function ProjectPage({
   useEffect(() => {
     void load();
   }, [projectId]);
+
+  useEffect(() => {
+    setShowAllClosed(false);
+  }, [projectId, taskView]);
 
   useEffect(() => {
     if (statusOpen && project && activeStatusId == null) {
@@ -761,6 +766,15 @@ export function ProjectPage({
                 {project?.statuses.map((status, index) => {
                   const columnId = statusKey(status.id);
                   const taskIds = visibleColumns[columnId] || [];
+                  const closed = isClosedStatus(status);
+                  const CLOSED_PREVIEW = 5;
+                  const displayedIds =
+                    closed && !showAllClosed && taskIds.length > CLOSED_PREVIEW
+                      ? taskIds.slice(0, CLOSED_PREVIEW)
+                      : taskIds;
+                  const hiddenClosedCount = closed
+                    ? Math.max(0, taskIds.length - displayedIds.length)
+                    : 0;
                   const isLast = index === project.statuses.length - 1;
                   return (
                     <KanbanColumn
@@ -772,12 +786,12 @@ export function ProjectPage({
                       isEmpty={taskIds.length === 0}
                     >
                       <SortableContext
-                        items={taskIds}
+                        items={displayedIds}
                         strategy={verticalListSortingStrategy}
                         disabled={!writable}
                       >
                         <div className="flex min-h-full flex-1 flex-col gap-2">
-                          {taskIds.map((id) => {
+                          {displayedIds.map((id) => {
                             const task = tasksById.get(parseTaskKey(id) ?? -1);
                             if (!task) return null;
                             return (
@@ -808,6 +822,30 @@ export function ProjectPage({
                               />
                             );
                           })}
+                          {hiddenClosedCount > 0 && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="mt-1 w-full cursor-pointer"
+                              onClick={() => setShowAllClosed(true)}
+                            >
+                              Показать все ({taskIds.length})
+                            </Button>
+                          )}
+                          {closed &&
+                            showAllClosed &&
+                            taskIds.length > CLOSED_PREVIEW && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="mt-1 w-full cursor-pointer"
+                                onClick={() => setShowAllClosed(false)}
+                              >
+                                Скрыть до 5-и
+                              </Button>
+                            )}
                           {taskIds.length === 0 && (
                             <div className="flex min-h-[240px] flex-1 items-center justify-center px-2 py-8 text-center text-xs text-muted-foreground">
                               {(columns[columnId] || []).length > 0
