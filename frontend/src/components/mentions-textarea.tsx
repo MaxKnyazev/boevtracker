@@ -334,16 +334,34 @@ export function MentionText({
   const segments = splitMentionSegments(text, users);
   return (
     <span className={className}>
-      {segments.map((seg, i) =>
-        seg.type === 'mention' && seg.user ? (
-          <MentionHoverCard
-            key={`${seg.value}-${i}`}
-            user={seg.user}
-            mentionClassName={mentionClassName}
-          >
-            {seg.value}
-          </MentionHoverCard>
-        ) : (
+      {segments.map((seg, i) => {
+        if (seg.type === 'mention' && seg.user) {
+          return (
+            <MentionHoverCard
+              key={`${seg.value}-${i}`}
+              user={seg.user}
+              mentionClassName={mentionClassName}
+            >
+              {seg.value}
+            </MentionHoverCard>
+          );
+        }
+        if (seg.type === 'link' && seg.href) {
+          return (
+            <a
+              key={`l-${i}`}
+              href={seg.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="break-all underline underline-offset-2 hover:opacity-90"
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+            >
+              {seg.value}
+            </a>
+          );
+        }
+        return (
           <span
             key={`t-${i}`}
             className={
@@ -357,8 +375,8 @@ export function MentionText({
           >
             {seg.value}
           </span>
-        ),
-      )}
+        );
+      })}
     </span>
   );
 }

@@ -57,38 +57,81 @@ export function insertMention(
 }
 
 const MENTION_TOKEN = /@[^\s@]+/gu;
+const URL_TOKEN = /(https?:\/\/[^\s<>"'`]+|www\.[^\s<>"'`]+)/gi;
+const TRAILING_URL_PUNCT = /[.,;:!?)]*$/;
 
-/** Split text into plain / mention segments for rendering. */
+export type TextSegment = {
+  type: 'text' | 'mention' | 'link';
+  value: string;
+  user?: MentionUser;
+  href?: string;
+};
+
+function normalizeUrl(raw: string): { display: string; href: string } {
+  let display = raw;
+  let trailing = '';
+  const punct = display.match(TRAILING_URL_PUNCT);
+  if (punct?.[0]) {
+    trailing = punct[0];
+    display = display.slice(0, -trailing.length);
+  }
+  const href = /^https?:\/\//i.test(display) ? display : `https://${display}`;
+  return { display: display + trailing, href };
+}
+
+/** Split plain text into text / link segments. */
+export function splitLinkSegments(text: string): TextSegment[] {
+  const segments: TextSegment[] = [];
+  let last = 0;
+  for (const match of text.matchAll(URL_TOKEN)) {
+    const raw = match[0];
+    const index = match.index ?? 0;
+    if (index > last) {
+      segments.push({ type: 'text', value: text.slice(last, index) });
+    }
+    const { display, href } = normalizeUrl(raw);
+    // If punctuation was stripped from href match, put trailing chars back as text.
+    const linked = display.replace(TRAILING_URL_PUNCT, '');
+    const trailing = display.slice(linked.length);
+    segments.push({ type: 'link', value: linked, href });
+    if (trailing) {
+      segments.push({ type: 'text', value: trailing });
+    }
+    last = index + raw.length;
+  }
+  if (last < text.length) {
+    segments.push({ type: 'text', value: text.slice(last) });
+  }
+  return segments.length > 0 ? segments : [{ type: 'text', value: text }];
+}
+
+/** Split text into plain / mention / link segments for rendering. */
 export function splitMentionSegments(
   text: string,
   users: MentionUser[],
-): { type: 'text' | 'mention'; value: string; user?: MentionUser }[] {
+): TextSegment[] {
   const byUsername = new Map(
     users.map((u) => [u.username.toLowerCase(), u] as const),
   );
-  const segments: {
-    type: 'text' | 'mention';
-    value: string;
-    user?: MentionUser;
-  }[] = [];
+  const segments: TextSegment[] = [];
   let last = 0;
   for (const match of text.matchAll(MENTION_TOKEN)) {
     const raw = match[0];
     const index = match.index ?? 0;
     if (index > last) {
-      segments.push({ type: 'text', value: text.slice(last, index) });
+      segments.push(...splitLinkSegments(text.slice(last, index)));
     }
     const username = raw.slice(1);
     const user = byUsername.get(username.toLowerCase());
     if (user) {
       segments.push({ type: 'mention', value: raw, user });
     } else {
-      segments.push({ type: 'text', value: raw });
+      segments.push(...splitLinkSegments(raw));
     }
     last = index + raw.length;
   }
   if (last < text.length) {
-    segments.push({ type: 'text', value: text.slice(last) });
+    segments.push(...splitLinkSegments(text.slice(last)));
   }
   return segments;
 }
