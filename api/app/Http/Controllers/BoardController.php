@@ -29,7 +29,7 @@ class BoardController extends Controller
                     'inProgressTasks' => (int) $b->projects->sum('in_progress_tasks_count'),
                 ];
 
-                return ApiPresenter::board($b, false, $counts);
+                return ApiPresenter::board($b, true, $counts);
             })
             ->values();
 

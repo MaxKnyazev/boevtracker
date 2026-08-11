@@ -113,7 +113,15 @@ export type Comment = {
   files: Attachment[];
 };
 
-export type AppNotificationType = 'mention' | 'reply' | 'assignee';
+export type AppNotificationType =
+  | 'mention'
+  | 'reply'
+  | 'assignee'
+  | 'task_comment'
+  | 'status_assignee'
+  | 'status_creator'
+  | 'subscription_task'
+  | 'subscription_status';
 
 export type AppNotification = {
   id: number;
@@ -126,6 +134,30 @@ export type AppNotification = {
   readAt?: string | null;
   createdAt: string;
   actor?: PublicUser | null;
+};
+
+export type NotificationSettings = {
+  taskComment: boolean;
+  mention: boolean;
+  reply: boolean;
+  assignee: boolean;
+  statusAssignee: boolean;
+  statusCreator: boolean;
+};
+
+export type NotificationSubscription = {
+  id: number;
+  boardId?: number | null;
+  projectId?: number | null;
+  notifyNewTasks: boolean;
+  notifyStatusChanges: boolean;
+  board?: { id: number; name: string } | null;
+  project?: {
+    id: number;
+    name: string;
+    boardId: number;
+    board?: { id: number; name: string } | null;
+  } | null;
 };
 
 export type Project = {
@@ -556,6 +588,40 @@ export const api = {
     }),
   markAllNotificationsRead: () =>
     request<{ ok: boolean }>('/api/notifications/read-all', { method: 'POST' }),
+
+  notificationSettings: () =>
+    request<{ settings: NotificationSettings }>('/api/notification-settings'),
+  updateNotificationSettings: (data: Partial<NotificationSettings>) =>
+    request<{ settings: NotificationSettings }>('/api/notification-settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  notificationSubscriptions: () =>
+    request<{ subscriptions: NotificationSubscription[] }>(
+      '/api/notification-subscriptions',
+    ),
+  createNotificationSubscription: (data: {
+    boardId?: number;
+    projectId?: number;
+    notifyNewTasks?: boolean;
+    notifyStatusChanges?: boolean;
+  }) =>
+    request<{ subscription: NotificationSubscription }>(
+      '/api/notification-subscriptions',
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+  updateNotificationSubscription: (
+    id: number,
+    data: { notifyNewTasks?: boolean; notifyStatusChanges?: boolean },
+  ) =>
+    request<{ subscription: NotificationSubscription }>(
+      `/api/notification-subscriptions/${id}`,
+      { method: 'PATCH', body: JSON.stringify(data) },
+    ),
+  deleteNotificationSubscription: (id: number) =>
+    request<{ ok: boolean }>(`/api/notification-subscriptions/${id}`, {
+      method: 'DELETE',
+    }),
 
   realtimeConfig: () =>
     request<{
