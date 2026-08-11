@@ -15,6 +15,7 @@ import {
   displayName,
 } from '@/components/user-avatar';
 import { AssigneeStack } from '@/components/assignee-stack';
+import { CLOSED_STATUS_NAME } from '@/lib/task-buckets';
 import { PRIORITY_LABELS, formatDate, formatDuration, cn } from '@/lib/utils';
 
 const DESC_LIMIT = 90;
@@ -258,12 +259,13 @@ export function TaskCard({
         {truncate(task.description)}
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-        <span>Создана {formatDate(task.createdAt)}</span>
-        <span className="text-border" aria-hidden>
-          ·
-        </span>
-        <span>В статусе {formatDuration(task.statusChangedAt)}</span>
+      <div className="space-y-0.5 text-xs text-muted-foreground">
+        <div>Создана {formatDate(task.createdAt)}</div>
+        <div>
+          {task.status?.name === CLOSED_STATUS_NAME
+            ? `Закрыта ${formatDate(task.statusChangedAt)}`
+            : `В статусе ${formatDuration(task.statusChangedAt)}`}
+        </div>
       </div>
     </div>
   );
