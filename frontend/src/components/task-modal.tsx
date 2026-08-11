@@ -648,7 +648,7 @@ export function TaskModal({
     // Portaled dropdown / select menus live outside DialogContent.
     if (
       target?.closest?.(
-        '[data-assignee-picker], [data-radix-dropdown-menu-content], [data-radix-select-content], [role="menu"]',
+        '[data-assignee-picker], [data-mention-picker], [data-radix-dropdown-menu-content], [data-radix-select-content], [role="menu"]',
       )
     ) {
       event.preventDefault();
