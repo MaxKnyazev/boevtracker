@@ -5,12 +5,14 @@ import {
   useState,
   type ClipboardEvent,
   type MouseEvent,
+  type PointerEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Check,
   Download,
   FileIcon,
+  GripHorizontal,
   Maximize2,
   Minus,
   Paperclip,
@@ -108,6 +110,34 @@ function formatFileSize(size: number): string {
   if (size < 1024) return `${size} Б`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} КБ`;
   return `${(size / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+const CHAT_HEIGHT_KEY = 'boevtracker.taskChatHeight';
+const DEFAULT_CHAT_HEIGHT = 380;
+const MIN_CHAT_HEIGHT = 260;
+const MAX_CHAT_HEIGHT = 900;
+
+function clampChatHeight(value: number): number {
+  return Math.min(MAX_CHAT_HEIGHT, Math.max(MIN_CHAT_HEIGHT, Math.round(value)));
+}
+
+function readStoredChatHeight(): number {
+  try {
+    const raw = localStorage.getItem(CHAT_HEIGHT_KEY);
+    const n = raw == null ? NaN : Number(raw);
+    if (Number.isFinite(n)) return clampChatHeight(n);
+  } catch {
+    // ignore
+  }
+  return DEFAULT_CHAT_HEIGHT;
+}
+
+function writeStoredChatHeight(value: number): void {
+  try {
+    localStorage.setItem(CHAT_HEIGHT_KEY, String(clampChatHeight(value)));
+  } catch {
+    // ignore
+  }
 }
 
 async function downloadAttachment(file: Attachment) {
@@ -224,9 +254,13 @@ export function TaskModal({
   } | null>(null);
   const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
   const [assigneeDraftIds, setAssigneeDraftIds] = useState<number[]>([]);
+  const [chatHeight, setChatHeight] = useState(readStoredChatHeight);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const chatFileInputRef = useRef<HTMLInputElement | null>(null);
+  const chatResizeRef = useRef<{ startY: number; startHeight: number } | null>(
+    null,
+  );
   const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
   const commentComposerRef = useRef<HTMLDivElement | null>(null);
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
@@ -238,6 +272,44 @@ export function TaskModal({
     const el = dialogContentRef.current;
     if (!el) return;
     el.scrollTop = 0;
+  };
+
+  const startChatResize = (e: PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    chatResizeRef.current = {
+      startY: e.clientY,
+      startHeight: chatHeight,
+    };
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+
+    const onMove = (ev: globalThis.PointerEvent) => {
+      const start = chatResizeRef.current;
+      if (!start) return;
+      const next = clampChatHeight(start.startHeight + (ev.clientY - start.startY));
+      setChatHeight(next);
+    };
+    const onUp = (ev: globalThis.PointerEvent) => {
+      const start = chatResizeRef.current;
+      chatResizeRef.current = null;
+      try {
+        target.releasePointerCapture(ev.pointerId);
+      } catch {
+        // ignore
+      }
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      if (start) {
+        const next = clampChatHeight(
+          start.startHeight + (ev.clientY - start.startY),
+        );
+        setChatHeight(next);
+        writeStoredChatHeight(next);
+      }
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
   };
 
   const load = async () => {
@@ -983,7 +1055,10 @@ export function TaskModal({
                 />
               </div>
 
-              <div className="flex h-[380px] flex-col overflow-hidden rounded-xl border border-border bg-background/40">
+              <div
+                className="relative flex flex-col overflow-hidden rounded-xl border border-border bg-background/40"
+                style={{ height: chatHeight }}
+              >
                 <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
                   <h3 className="text-sm font-medium">Комментарии</h3>
                   <span className="text-xs text-muted-foreground">
@@ -1380,6 +1455,16 @@ export function TaskModal({
                     Только просмотр
                   </div>
                 )}
+                <div
+                  role="separator"
+                  aria-orientation="horizontal"
+                  aria-label="Изменить высоту чата"
+                  title="Потяните, чтобы изменить высоту чата"
+                  className="flex h-3 shrink-0 cursor-ns-resize items-center justify-center border-t border-border bg-muted/30 text-muted-foreground hover:bg-muted/60"
+                  onPointerDown={startChatResize}
+                >
+                  <GripHorizontal className="h-3.5 w-3.5" aria-hidden />
+                </div>
               </div>
             </div>
 
