@@ -132,11 +132,14 @@ class ApiPresenter
             'projectId' => $task->project_id,
             'statusId' => $task->status_id,
             'order' => $task->sort_order,
-            'assigneeId' => $task->assignee_id,
+            'activeAssigneeId' => $task->active_assignee_id,
             'statusChangedAt' => self::date($task->status_changed_at),
             'createdAt' => self::date($task->created_at),
             'updatedAt' => self::date($task->updated_at),
-            'assignee' => self::publicUser($task->assignee),
+            'activeAssignee' => self::publicUser($task->activeAssignee),
+            'assignees' => $task->relationLoaded('assignees')
+                ? $task->assignees->map(fn ($u) => self::publicUser($u))->values()->all()
+                : [],
             'status' => $task->relationLoaded('status') && $task->status
                 ? self::status($task->status)
                 : null,

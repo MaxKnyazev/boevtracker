@@ -48,6 +48,7 @@ import { TaskCard } from '@/components/task-card';
 import { TaskModal } from '@/components/task-modal';
 import { MoveBoardDialog } from '@/components/move-board-dialog';
 import { TaskViewControls } from '@/components/task-view-controls';
+import { ChooseActiveAssigneeDialog } from '@/components/choose-active-assignee-dialog';
 import {
   FileDropZone,
   MAX_UPLOAD_FILE_SIZE,
@@ -65,6 +66,12 @@ import {
   computeTaskBuckets,
   type TaskBucketCounts,
 } from '@/lib/task-buckets';
+import { MAX_TASK_TITLE_LENGTH } from '@/lib/utils';
+import {
+  isTaskAssignee,
+  taskActiveAssignee,
+  taskAssignees,
+} from '@/lib/api';
 
 const OPEN_STATUS_NAME = 'Открыта';
 const CLOSED_STATUS_NAME = 'Закрыта';
@@ -226,6 +233,16 @@ export function ProjectPage({
   const [deadline, setDeadline] = useState('');
   const [createFiles, setCreateFiles] = useState<File[]>([]);
   const [creating, setCreating] = useState(false);
+  const [pendingMove, setPendingMove] = useState<{
+    task: Task;
+    statusId: number;
+    index: number;
+  } | null>(null);
+  const [pendingAssign, setPendingAssign] = useState<{
+    taskId: number;
+    assigneeIds: number[];
+    assignees: NonNullable<Task['assignees']>;
+  } | null>(null);
 
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
@@ -469,6 +486,31 @@ export function ProjectPage({
 
     applyLocalMove(taskId, statusId, index, orderedIds);
 
+    const assignees = original ? taskAssignees(original) : [];
+    const statusChanged = original != null && original.statusId !== statusId;
+    const targetStatus = project?.statuses.find((s) => s.id === statusId);
+
+    if (
+      statusChanged &&
+      assignees.length > 0 &&
+      targetStatus &&
+      !isClosedStatus(targetStatus)
+    ) {
+      if (!isTaskAssignee(original!, user?.id)) {
+        setError('Менять статус может только исполнитель задачи');
+        await load();
+        return;
+      }
+      setPendingMove({ task: original!, statusId, index });
+      return;
+    }
+
+    if (statusChanged && assignees.length > 0 && !isTaskAssignee(original!, user?.id)) {
+      setError('Менять статус может только исполнитель задачи');
+      await load();
+      return;
+    }
+
     try {
       await api.moveTaskPosition(taskId, { statusId, index });
     } catch (err) {
@@ -522,10 +564,17 @@ export function ProjectPage({
   const createTask = async (e: FormEvent) => {
     e.preventDefault();
     if (!project) return;
+    const taskTitle = title.trim();
+    if (!taskTitle) return;
+    if (taskTitle.length > MAX_TASK_TITLE_LENGTH) {
+      setError(
+        `Название задачи не длиннее ${MAX_TASK_TITLE_LENGTH} символов`,
+      );
+      return;
+    }
     setCreating(true);
     try {
       const filesToUpload = [...createFiles];
-      const taskTitle = title.trim();
       const res = await api.createTask(project.id, {
         title: taskTitle,
         description: description.trim() || undefined,
@@ -752,8 +801,20 @@ export function ProjectPage({
                                 writable={writable}
                                 onOpen={() => setSelectedTaskId(task.id)}
                                 onMoveBoard={() => setMoveTask(task)}
-                                onAssign={async (assigneeId) => {
-                                  await api.updateTask(task.id, { assigneeId });
+                                onAssign={async (assigneeIds) => {
+                                  const res = await api.updateTask(task.id, {
+                                    assigneeIds,
+                                  });
+                                  if (
+                                    res.needsActiveChoice &&
+                                    taskAssignees(res.task).length > 1
+                                  ) {
+                                    setPendingAssign({
+                                      taskId: task.id,
+                                      assigneeIds,
+                                      assignees: taskAssignees(res.task),
+                                    });
+                                  }
                                   await load();
                                 }}
                               />
@@ -815,6 +876,56 @@ export function ProjectPage({
         />
       )}
 
+      {pendingMove && (
+        <ChooseActiveAssigneeDialog
+          open
+          title="Кто работает в следующем статусе?"
+          description="Выберите активного исполнителя для нового статуса задачи."
+          assignees={taskAssignees(pendingMove.task)}
+          initialUserId={taskActiveAssignee(pendingMove.task)?.id}
+          confirmLabel="Перевести"
+          onCancel={() => {
+            setPendingMove(null);
+            void load();
+          }}
+          onConfirm={async (userId) => {
+            const move = pendingMove;
+            setPendingMove(null);
+            try {
+              await api.moveTaskPosition(move.task.id, {
+                statusId: move.statusId,
+                index: move.index,
+                activeAssigneeId: userId,
+              });
+              await load();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Ошибка переноса');
+              await load();
+            }
+          }}
+        />
+      )}
+
+      {pendingAssign && pendingAssign.assignees && pendingAssign.assignees.length > 0 && (
+        <ChooseActiveAssigneeDialog
+          open
+          title="Кто активный исполнитель?"
+          description="У задачи несколько исполнителей. Выберите активного для текущего статуса."
+          assignees={pendingAssign.assignees}
+          initialUserId={pendingAssign.assignees[0]?.id}
+          onCancel={() => setPendingAssign(null)}
+          onConfirm={async (userId) => {
+            const pending = pendingAssign;
+            setPendingAssign(null);
+            await api.updateTask(pending.taskId, {
+              assigneeIds: pending.assigneeIds,
+              activeAssigneeId: userId,
+            });
+            await load();
+          }}
+        />
+      )}
+
       <Dialog
         open={createOpen}
         onOpenChange={(open) => {
@@ -843,8 +954,12 @@ export function ProjectPage({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
+                maxLength={MAX_TASK_TITLE_LENGTH}
                 disabled={creating}
               />
+              <p className="text-xs text-muted-foreground">
+                Не больше {MAX_TASK_TITLE_LENGTH} символов
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Описание</Label>
@@ -1136,7 +1251,7 @@ function SortableTask({
   writable: boolean;
   onOpen: () => void;
   onMoveBoard: () => void;
-  onAssign: (assigneeId: number | null) => Promise<void>;
+  onAssign: (assigneeIds: number[]) => Promise<void>;
 }) {
   const {
     attributes,

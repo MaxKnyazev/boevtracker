@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Task extends Model
@@ -15,7 +16,7 @@ class Task extends Model
         'deadline',
         'project_id',
         'status_id',
-        'assignee_id',
+        'active_assignee_id',
         'created_by_id',
         'sort_order',
         'status_changed_at',
@@ -36,9 +37,16 @@ class Task extends Model
         return $this->belongsTo(ProjectStatus::class, 'status_id');
     }
 
-    public function assignee(): BelongsTo
+    public function assignees(): BelongsToMany
     {
-        return $this->belongsTo(User::class, 'assignee_id');
+        return $this->belongsToMany(User::class, 'task_assignees')
+            ->withPivot('created_at')
+            ->orderBy('task_assignees.created_at');
+    }
+
+    public function activeAssignee(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'active_assignee_id');
     }
 
     public function createdBy(): BelongsTo
@@ -59,5 +67,19 @@ class Task extends Model
     public function statusHistories(): HasMany
     {
         return $this->hasMany(TaskStatusHistory::class)->orderByDesc('created_at');
+    }
+
+    public function assigneeIds(): array
+    {
+        if ($this->relationLoaded('assignees')) {
+            return $this->assignees->pluck('id')->map(fn ($id) => (int) $id)->all();
+        }
+
+        return $this->assignees()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    public function isAssignee(int $userId): bool
+    {
+        return in_array($userId, $this->assigneeIds(), true);
     }
 }

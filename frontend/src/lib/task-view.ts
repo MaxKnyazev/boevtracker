@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Task, User } from '@/lib/api';
+import {
+  taskActiveAssignee,
+  taskAssignees,
+  type Task,
+  type User,
+} from '@/lib/api';
 import { displayName } from '@/components/user-avatar';
 
 export type TaskSortField =
@@ -239,8 +244,9 @@ function matchesStatusTime(task: Task, filter: StatusTimeFilter): boolean {
 
 function matchesAssignee(task: Task, filter: string): boolean {
   if (filter === 'all') return true;
-  if (filter === 'none') return task.assigneeId == null;
-  return String(task.assigneeId) === filter;
+  const assignees = taskAssignees(task);
+  if (filter === 'none') return assignees.length === 0;
+  return assignees.some((u) => String(u.id) === filter);
 }
 
 export function filterTasks(tasks: Task[], view: TaskViewState): Task[] {
@@ -334,8 +340,12 @@ export function sortTasks(tasks: Task[], view: TaskViewState): Task[] {
         break;
       }
       case 'assignee': {
-        const na = a.assignee ? displayName(a.assignee) : '';
-        const nb = b.assignee ? displayName(b.assignee) : '';
+        const na = taskActiveAssignee(a)
+          ? displayName(taskActiveAssignee(a))
+          : '';
+        const nb = taskActiveAssignee(b)
+          ? displayName(taskActiveAssignee(b))
+          : '';
         cmp = compareNullableString(na, nb, sortDir);
         break;
       }

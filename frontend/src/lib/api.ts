@@ -57,11 +57,12 @@ export type Task = {
   projectId: number;
   statusId: number;
   order?: number;
-  assigneeId?: number | null;
+  activeAssigneeId?: number | null;
   statusChangedAt: string;
   createdAt: string;
   updatedAt: string;
-  assignee?: PublicUser | null;
+  activeAssignee?: PublicUser | null;
+  assignees?: PublicUser[];
   status?: ProjectStatus;
   files?: Attachment[];
   createdBy?: PublicUser;
@@ -75,6 +76,24 @@ export type Task = {
   statusHistory?: TaskStatusHistory[];
   _count?: { comments: number };
 };
+
+export function taskAssignees(task: Task): PublicUser[] {
+  return task.assignees ?? [];
+}
+
+export function taskActiveAssignee(task: Task): PublicUser | null {
+  if (task.activeAssignee) return task.activeAssignee;
+  const list = taskAssignees(task);
+  if (task.activeAssigneeId != null) {
+    return list.find((u) => u.id === task.activeAssigneeId) ?? list[0] ?? null;
+  }
+  return list[0] ?? null;
+}
+
+export function isTaskAssignee(task: Task, userId: number | null | undefined): boolean {
+  if (userId == null) return false;
+  return taskAssignees(task).some((u) => u.id === userId);
+}
 
 export type CommentReplyTo = {
   id: number;
@@ -157,11 +176,7 @@ async function request<T>(
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const message =
-      typeof data.error === 'string'
-        ? data.error
-        : data.error?.formErrors?.[0] || 'Ошибка запроса';
-    throw new Error(message);
+    throw new Error(parseErrorPayload(data));
   }
   return data as T;
 }
@@ -184,17 +199,31 @@ export class UploadAbortedError extends Error {
   }
 }
 
+function firstValidationMessage(err: unknown): string | null {
+  if (typeof err === 'string' && err.trim()) return err;
+  if (!err || typeof err !== 'object') return null;
+
+  const obj = err as Record<string, unknown>;
+  if (Array.isArray(obj.formErrors) && typeof obj.formErrors[0] === 'string') {
+    return obj.formErrors[0];
+  }
+
+  for (const value of Object.values(obj)) {
+    if (Array.isArray(value) && typeof value[0] === 'string' && value[0].trim()) {
+      return value[0];
+    }
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+
+  return null;
+}
+
 function parseErrorPayload(data: unknown): string {
   if (!data || typeof data !== 'object') return 'Ошибка запроса';
-  const err = (data as { error?: unknown }).error;
-  if (typeof err === 'string') return err;
-  if (err && typeof err === 'object') {
-    const formErrors = (err as { formErrors?: unknown }).formErrors;
-    if (Array.isArray(formErrors) && typeof formErrors[0] === 'string') {
-      return formErrors[0];
-    }
-  }
-  return 'Ошибка запроса';
+  return (
+    firstValidationMessage((data as { error?: unknown }).error) ||
+    'Ошибка запроса'
+  );
 }
 
 function uploadFormData<T>(
@@ -404,6 +433,8 @@ export const api = {
       deadline?: string | null;
       statusId?: number;
       assigneeId?: number | null;
+      assigneeIds?: number[];
+      activeAssigneeId?: number | null;
     },
   ) =>
     request<{ task: Task }>(`/api/projects/${projectId}/tasks`, {
@@ -413,17 +444,22 @@ export const api = {
   tasks: () => request<{ tasks: Task[] }>('/api/tasks'),
   task: (id: number) => request<{ task: Task }>(`/api/tasks/${id}`),
   updateTask: (id: number, data: Record<string, unknown>) =>
-    request<{ task: Task }>(`/api/tasks/${id}`, {
+    request<{ task: Task; needsActiveChoice?: boolean }>(`/api/tasks/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
-  moveTaskPosition: (id: number, data: { statusId: number; index: number }) =>
+  moveTaskPosition: (
+    id: number,
+    data: { statusId: number; index: number; activeAssigneeId?: number },
+  ) =>
     request<{ task: Task }>(`/api/tasks/${id}/position`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
   takeTask: (id: number) =>
-    request<{ task: Task }>(`/api/tasks/${id}/take`, { method: 'POST' }),
+    request<{ task: Task; needsActiveChoice?: boolean }>(`/api/tasks/${id}/take`, {
+      method: 'POST',
+    }),
   moveTaskBoard: (
     id: number,
     data: { boardId: number; projectId: number; statusId?: number },
