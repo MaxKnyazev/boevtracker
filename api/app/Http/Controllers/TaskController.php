@@ -183,6 +183,22 @@ class TaskController extends Controller
             'to_status_name' => $to->name,
             'created_at' => now(),
         ]);
+
+        // Skip notifications for the initial status on task create (from is null).
+        if ($fromStatusId !== null) {
+            if (! $task->relationLoaded('assignees')) {
+                $task->load('assignees');
+            }
+            if (! $task->relationLoaded('project')) {
+                $task->load('project');
+            }
+            $this->notifications->notifyStatusChange(
+                $user,
+                $task,
+                $from?->name,
+                $to->name,
+            );
+        }
     }
 
     private function resolveOpenStatus(int $projectId, ?string $preferredName = null): ?ProjectStatus
@@ -310,6 +326,8 @@ class TaskController extends Controller
         }
 
         $this->recordStatusChange($task, $user, null, (int) $statusId);
+        $task->loadMissing('project');
+        $this->notifications->notifyTaskCreated($user, $task);
 
         $task->load($this->taskRelations());
 

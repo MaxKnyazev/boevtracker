@@ -31,6 +31,13 @@ Route::middleware(AuthenticateJwt::class)->group(function () {
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead'])->whereNumber('id');
 
+    Route::get('/notification-settings', [NotificationController::class, 'settings']);
+    Route::put('/notification-settings', [NotificationController::class, 'updateSettings']);
+    Route::get('/notification-subscriptions', [NotificationController::class, 'subscriptions']);
+    Route::post('/notification-subscriptions', [NotificationController::class, 'storeSubscription']);
+    Route::patch('/notification-subscriptions/{id}', [NotificationController::class, 'updateSubscription'])->whereNumber('id');
+    Route::delete('/notification-subscriptions/{id}', [NotificationController::class, 'destroySubscription'])->whereNumber('id');
+
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/users/assignable', [UserController::class, 'assignable']);
     Route::patch('/users/{id}/role', [UserController::class, 'setRole'])->whereNumber('id');

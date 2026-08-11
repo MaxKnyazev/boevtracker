@@ -6,11 +6,13 @@ use App\Models\Attachment;
 use App\Models\Board;
 use App\Models\Comment;
 use App\Models\Notification;
+use App\Models\NotificationSubscription;
 use App\Models\Project;
 use App\Models\ProjectStatus;
 use App\Models\Task;
 use App\Models\TaskStatusHistory;
 use App\Models\User;
+use App\Models\UserNotificationSettings;
 use Illuminate\Support\Carbon;
 
 class ApiPresenter
@@ -89,6 +91,45 @@ class ApiPresenter
             'actor' => self::publicUser(
                 $notification->relationLoaded('actor') ? $notification->actor : null
             ),
+        ];
+    }
+
+    public static function notificationSettings(UserNotificationSettings $settings): array
+    {
+        return [
+            'taskComment' => (bool) $settings->task_comment,
+            'mention' => (bool) $settings->mention,
+            'reply' => (bool) $settings->reply,
+            'assignee' => (bool) $settings->assignee,
+            'statusAssignee' => (bool) $settings->status_assignee,
+            'statusCreator' => (bool) $settings->status_creator,
+        ];
+    }
+
+    public static function notificationSubscription(NotificationSubscription $sub): array
+    {
+        return [
+            'id' => $sub->id,
+            'boardId' => $sub->board_id,
+            'projectId' => $sub->project_id,
+            'notifyNewTasks' => (bool) $sub->notify_new_tasks,
+            'notifyStatusChanges' => (bool) $sub->notify_status_changes,
+            'board' => $sub->relationLoaded('board') && $sub->board
+                ? ['id' => $sub->board->id, 'name' => $sub->board->name]
+                : null,
+            'project' => $sub->relationLoaded('project') && $sub->project
+                ? [
+                    'id' => $sub->project->id,
+                    'name' => $sub->project->name,
+                    'boardId' => $sub->project->board_id,
+                    'board' => $sub->project->relationLoaded('board') && $sub->project->board
+                        ? [
+                            'id' => $sub->project->board->id,
+                            'name' => $sub->project->board->name,
+                        ]
+                        : null,
+                ]
+                : null,
         ];
     }
 
