@@ -108,21 +108,6 @@ class TaskController extends Controller
         return array_values(array_diff($assigneeIds, $previous));
     }
 
-    private function forbidStatusChangeUnlessAssignee(User $user, Task $task): ?JsonResponse
-    {
-        $ids = $task->assigneeIds();
-        if ($ids === []) {
-            return null;
-        }
-        if (! in_array((int) $user->id, $ids, true)) {
-            return response()->json([
-                'error' => 'Менять статус может только исполнитель задачи',
-            ], 403);
-        }
-
-        return null;
-    }
-
     private function resolveActiveForStatusChange(
         Request $request,
         Task $task,
@@ -133,11 +118,13 @@ class TaskController extends Controller
         $toClosed = $toStatus !== null
             && $toStatus->name === Constants::CLOSED_STATUS_NAME;
 
-        // Closed status keeps the current active assignee — no picker required.
-        if (! $statusChanging || $assigneeIds === [] || $toClosed) {
+        // No picker: no status change, no assignees, closed status, or a single assignee.
+        if (! $statusChanging || $assigneeIds === [] || $toClosed || count($assigneeIds) === 1) {
             if ($request->has('activeAssigneeId')) {
                 $raw = $request->input('activeAssigneeId');
                 $active = $raw !== null ? (int) $raw : null;
+            } elseif (count($assigneeIds) === 1) {
+                $active = $assigneeIds[0];
             } else {
                 $active = $task->active_assignee_id !== null
                     ? (int) $task->active_assignee_id
@@ -426,11 +413,6 @@ class TaskController extends Controller
         }
 
         $statusChanging = $toStatusId !== $fromStatusId;
-        if ($statusChanging) {
-            if ($resp = $this->forbidStatusChangeUnlessAssignee($user, $task)) {
-                return $resp;
-            }
-        }
 
         // Sync assignees before resolving active for status change (list may change in same request).
         $needsActiveChoice = false;
@@ -577,9 +559,6 @@ class TaskController extends Controller
         $statusChanged = $status->id !== $task->status_id;
 
         if ($statusChanged) {
-            if ($resp = $this->forbidStatusChangeUnlessAssignee($user, $task)) {
-                return $resp;
-            }
             [$activeErr, $activeForStatus] = $this->resolveActiveForStatusChange(
                 $request,
                 $task,

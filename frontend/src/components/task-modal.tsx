@@ -340,21 +340,15 @@ export function TaskModal({
   const changeStatus = async (statusId: number) => {
     if (!task) return;
     const assignees = taskAssignees(task);
-    if (assignees.length > 0) {
-      if (!isTaskAssignee(task, me?.id)) {
-        setError('Менять статус может только исполнитель задачи');
-        return;
-      }
-      const nextStatus = project?.statuses?.find((s) => s.id === statusId);
-      const toClosed = nextStatus?.name === CLOSED_STATUS_NAME;
-      if (!toClosed) {
-        setActiveChoice({
-          mode: 'status',
-          statusId,
-          assignees,
-        });
-        return;
-      }
+    const nextStatus = project?.statuses?.find((s) => s.id === statusId);
+    const toClosed = nextStatus?.name === CLOSED_STATUS_NAME;
+    if (!toClosed && assignees.length > 1) {
+      setActiveChoice({
+        mode: 'status',
+        statusId,
+        assignees,
+      });
+      return;
     }
     await saveField({ statusId });
   };

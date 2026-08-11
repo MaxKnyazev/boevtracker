@@ -68,7 +68,6 @@ import {
 } from '@/lib/task-buckets';
 import { MAX_TASK_TITLE_LENGTH } from '@/lib/utils';
 import {
-  isTaskAssignee,
   taskActiveAssignee,
   taskAssignees,
 } from '@/lib/api';
@@ -492,22 +491,11 @@ export function ProjectPage({
 
     if (
       statusChanged &&
-      assignees.length > 0 &&
+      assignees.length > 1 &&
       targetStatus &&
       !isClosedStatus(targetStatus)
     ) {
-      if (!isTaskAssignee(original!, user?.id)) {
-        setError('Менять статус может только исполнитель задачи');
-        await load();
-        return;
-      }
       setPendingMove({ task: original!, statusId, index });
-      return;
-    }
-
-    if (statusChanged && assignees.length > 0 && !isTaskAssignee(original!, user?.id)) {
-      setError('Менять статус может только исполнитель задачи');
-      await load();
       return;
     }
 
