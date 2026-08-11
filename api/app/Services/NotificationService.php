@@ -30,6 +30,16 @@ class NotificationService
         );
     }
 
+    /**
+     * @param  list<int>  $userIds
+     */
+    public function notifyNewAssignees(User $actor, Task $task, array $userIds): void
+    {
+        foreach (array_unique($userIds) as $userId) {
+            $this->notifyAssignee($actor, $task, (int) $userId);
+        }
+    }
+
     public function notifyComment(User $actor, Task $task, Comment $comment): void
     {
         $skipUserIds = [$actor->id];

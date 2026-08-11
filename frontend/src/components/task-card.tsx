@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { Flame } from 'lucide-react';
-import type { Task, User } from '@/lib/api';
+import { Check, Flame } from 'lucide-react';
+import { taskAssignees, type Task, type User } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import {
   ContextMenu,
@@ -14,6 +14,7 @@ import {
   UserAvatar,
   displayName,
 } from '@/components/user-avatar';
+import { AssigneeStack } from '@/components/assignee-stack';
 import { PRIORITY_LABELS, formatDate, formatDuration, cn } from '@/lib/utils';
 
 const DESC_LIMIT = 90;
@@ -57,14 +58,21 @@ export function TaskCard({
   dragListeners?: object;
   onOpen?: () => void;
   onMoveBoard?: () => void;
-  onAssign?: (assigneeId: number | null) => Promise<void>;
+  onAssign?: (assigneeIds: number[]) => Promise<void>;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(
     null,
   );
+  const [draftIds, setDraftIds] = useState<number[]>([]);
+  const [saving, setSaving] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    setDraftIds(taskAssignees(task).map((u) => u.id));
+  }, [pickerOpen, task]);
 
   useLayoutEffect(() => {
     if (!pickerOpen || !buttonRef.current) {
@@ -72,7 +80,7 @@ export function TaskCard({
       return;
     }
     const rect = buttonRef.current.getBoundingClientRect();
-    const menuHeight = Math.min(240, 40 + users.length * 36);
+    const menuHeight = Math.min(280, 80 + users.length * 36);
     const spaceBelow = window.innerHeight - rect.bottom;
     const openUp = spaceBelow < menuHeight + 8 && rect.top > spaceBelow;
     const top = openUp ? rect.top - menuHeight - 4 : rect.bottom + 4;
@@ -96,7 +104,6 @@ export function TaskCard({
       setPickerOpen(false);
     };
     const onScroll = (e: Event) => {
-      // Ignore scrolling inside the picker list itself.
       if (menuRef.current?.contains(e.target as Node)) return;
       setPickerOpen(false);
     };
@@ -110,12 +117,23 @@ export function TaskCard({
     };
   }, [pickerOpen]);
 
+  const applyAssignees = async (ids: number[]) => {
+    if (!onAssign) return;
+    setSaving(true);
+    try {
+      await onAssign(ids);
+      setPickerOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const assigneeMenu =
     pickerOpen && onAssign && pickerPos
       ? createPortal(
           <div
             ref={menuRef}
-            className="fixed z-[100] max-h-60 w-52 overflow-auto rounded-lg border border-border bg-popover py-1 shadow-xl"
+            className="fixed z-[100] w-52 rounded-lg border border-border bg-popover py-1 shadow-xl"
             style={{ top: pickerPos.top, left: pickerPos.left }}
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
@@ -123,29 +141,50 @@ export function TaskCard({
             <button
               type="button"
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground hover:bg-accent"
+              disabled={saving}
               onClick={() => {
-                void onAssign(null).then(() => setPickerOpen(false));
+                setDraftIds([]);
+                void applyAssignees([]);
               }}
             >
               <EmptyAssigneeAvatar size="sm" />
-              Без исполнителя
+              Без исполнителей
             </button>
-            {users.map((u) => (
+            {users.map((u) => {
+              const selected = draftIds.includes(u.id);
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  disabled={saving}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-accent',
+                    selected && 'bg-accent/50',
+                  )}
+                  onClick={() => {
+                    setDraftIds((prev) =>
+                      prev.includes(u.id)
+                        ? prev.filter((id) => id !== u.id)
+                        : [...prev, u.id],
+                    );
+                  }}
+                >
+                  <UserAvatar user={u} size="sm" />
+                  <span className="min-w-0 flex-1 truncate">{displayName(u)}</span>
+                  {selected ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
+                </button>
+              );
+            })}
+            <div className="border-t border-border p-1.5">
               <button
-                key={u.id}
                 type="button"
-                className={cn(
-                  'flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-accent',
-                  task.assigneeId === u.id && 'bg-accent/50',
-                )}
-                onClick={() => {
-                  void onAssign(u.id).then(() => setPickerOpen(false));
-                }}
+                disabled={saving}
+                className="w-full rounded-md bg-primary px-2 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                onClick={() => void applyAssignees(draftIds)}
               >
-                <UserAvatar user={u} size="sm" />
-                <span className="truncate">{displayName(u)}</span>
+                Применить
               </button>
-            ))}
+            </div>
           </div>,
           document.body,
         )
@@ -186,17 +225,13 @@ export function TaskCard({
               if (writable && onAssign) setPickerOpen((v) => !v);
             }}
             className={cn(
-              'flex h-7 w-7 shrink-0 items-center justify-center p-0 leading-none outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'flex min-h-7 shrink-0 items-center justify-center p-0 leading-none outline-none focus-visible:ring-2 focus-visible:ring-ring',
               writable && onAssign && !preview
                 ? 'cursor-pointer'
                 : 'disabled:cursor-default',
             )}
           >
-            {task.assignee ? (
-              <UserAvatar user={task.assignee} size="sm" />
-            ) : (
-              <EmptyAssigneeAvatar size="sm" />
-            )}
+            <AssigneeStack task={task} size="sm" />
           </button>
           {assigneeMenu}
         </div>

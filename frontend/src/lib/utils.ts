@@ -32,6 +32,9 @@ export const PRIORITY_LABELS: Record<string, string> = {
   CRITICAL: 'Критический',
 };
 
+/** Matches Laravel / DB varchar(255) for task titles. */
+export const MAX_TASK_TITLE_LENGTH = 255;
+
 export const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Администратор',
   DEVELOPER: 'Разработчик',

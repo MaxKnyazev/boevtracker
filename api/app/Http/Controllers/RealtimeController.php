@@ -82,7 +82,8 @@ class RealtimeController extends Controller
         if ($taskChanged && $taskId !== null) {
             $task = Task::query()
                 ->with([
-                    'assignee',
+                    'assignees',
+                    'activeAssignee',
                     'status',
                     'files',
                     'createdBy',

@@ -42,7 +42,8 @@ class TaskController extends Controller
     private function taskRelations(): array
     {
         return [
-            'assignee',
+            'assignees',
+            'activeAssignee',
             'status',
             'files',
             'createdBy',
@@ -53,6 +54,119 @@ class TaskController extends Controller
             'comments.replyTo.files',
             'statusHistories.user',
         ];
+    }
+
+    /**
+     * @param  list<int>  $ids
+     * @return list<int>
+     */
+    private function normalizeAssigneeIds(array $ids): array
+    {
+        $unique = [];
+        foreach ($ids as $id) {
+            $n = (int) $id;
+            if ($n > 0) {
+                $unique[$n] = $n;
+            }
+        }
+
+        return array_values($unique);
+    }
+
+    /**
+     * Sync pivot and optionally active assignee. Returns newly added user ids.
+     *
+     * @param  list<int>  $assigneeIds
+     * @return list<int>
+     */
+    private function syncAssignees(Task $task, array $assigneeIds, ?int $activeAssigneeId = null): array
+    {
+        $assigneeIds = $this->normalizeAssigneeIds($assigneeIds);
+        $previous = $task->assigneeIds();
+        $task->assignees()->sync($assigneeIds);
+
+        $active = $activeAssigneeId;
+        if ($assigneeIds === []) {
+            $active = null;
+        } elseif ($active !== null && ! in_array($active, $assigneeIds, true)) {
+            $active = $assigneeIds[0];
+        } elseif ($active === null) {
+            if (count($assigneeIds) === 1) {
+                $active = $assigneeIds[0];
+            } elseif ($task->active_assignee_id && in_array((int) $task->active_assignee_id, $assigneeIds, true)) {
+                $active = (int) $task->active_assignee_id;
+            } else {
+                $active = $assigneeIds[0];
+            }
+        }
+
+        if ((int) ($task->active_assignee_id ?? 0) !== (int) ($active ?? 0)) {
+            $task->active_assignee_id = $active;
+            $task->save();
+        }
+
+        return array_values(array_diff($assigneeIds, $previous));
+    }
+
+    private function forbidStatusChangeUnlessAssignee(User $user, Task $task): ?JsonResponse
+    {
+        $ids = $task->assigneeIds();
+        if ($ids === []) {
+            return null;
+        }
+        if (! in_array((int) $user->id, $ids, true)) {
+            return response()->json([
+                'error' => 'Менять статус может только исполнитель задачи',
+            ], 403);
+        }
+
+        return null;
+    }
+
+    private function resolveActiveForStatusChange(
+        Request $request,
+        Task $task,
+        bool $statusChanging,
+        ?ProjectStatus $toStatus = null,
+    ): array {
+        $assigneeIds = $task->assigneeIds();
+        $toClosed = $toStatus !== null
+            && $toStatus->name === Constants::CLOSED_STATUS_NAME;
+
+        // Closed status keeps the current active assignee — no picker required.
+        if (! $statusChanging || $assigneeIds === [] || $toClosed) {
+            if ($request->has('activeAssigneeId')) {
+                $raw = $request->input('activeAssigneeId');
+                $active = $raw !== null ? (int) $raw : null;
+            } else {
+                $active = $task->active_assignee_id !== null
+                    ? (int) $task->active_assignee_id
+                    : null;
+            }
+
+            return [null, $active];
+        }
+
+        if (! $request->has('activeAssigneeId') || $request->input('activeAssigneeId') === null) {
+            return [
+                response()->json([
+                    'error' => 'Укажите активного исполнителя для нового статуса',
+                ], 400),
+                null,
+            ];
+        }
+
+        $active = (int) $request->input('activeAssigneeId');
+        if (! in_array($active, $assigneeIds, true)) {
+            return [
+                response()->json([
+                    'error' => 'Активный исполнитель должен быть в списке исполнителей задачи',
+                ], 400),
+                null,
+            ];
+        }
+
+        return [null, $active];
     }
 
     private function recordStatusChange(
@@ -117,7 +231,7 @@ class TaskController extends Controller
         }
 
         $tasks = Task::query()
-            ->with(['assignee', 'status', 'createdBy', 'project.board'])
+            ->with(['assignees', 'activeAssignee', 'status', 'createdBy', 'project.board'])
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
             ->get()
@@ -141,6 +255,14 @@ class TaskController extends Controller
             'deadline' => ['nullable', 'date'],
             'statusId' => ['nullable', 'integer'],
             'assigneeId' => ['nullable', 'integer'],
+            'assigneeIds' => ['nullable', 'array'],
+            'assigneeIds.*' => ['integer'],
+            'activeAssigneeId' => ['nullable', 'integer'],
+        ], [
+            'title.required' => 'Укажите название задачи',
+            'title.min' => 'Укажите название задачи',
+            'title.max' => 'Название задачи не длиннее 255 символов',
+            'description.max' => 'Описание не длиннее 10000 символов',
         ]);
         if ($validator->fails()) {
             return response()->json(['error' => $validator->errors()->toArray()], 400);
@@ -165,6 +287,23 @@ class TaskController extends Controller
 
         $maxOrder = (int) Task::query()->where('status_id', $statusId)->max('sort_order');
 
+        $assigneeIds = [];
+        if (isset($data['assigneeIds']) && is_array($data['assigneeIds'])) {
+            $assigneeIds = $this->normalizeAssigneeIds($data['assigneeIds']);
+        } elseif (! empty($data['assigneeId'])) {
+            $assigneeIds = [(int) $data['assigneeId']];
+        }
+
+        $activeId = isset($data['activeAssigneeId'])
+            ? (int) $data['activeAssigneeId']
+            : ($assigneeIds[0] ?? null);
+        if ($assigneeIds !== [] && ($activeId === null || ! in_array($activeId, $assigneeIds, true))) {
+            $activeId = $assigneeIds[0];
+        }
+        if ($assigneeIds === []) {
+            $activeId = null;
+        }
+
         $task = Task::query()->create([
             'title' => $data['title'],
             'description' => $data['description'] ?? null,
@@ -173,16 +312,17 @@ class TaskController extends Controller
             'project_id' => $projectId,
             'status_id' => $statusId,
             'sort_order' => $maxOrder + 1,
-            'assignee_id' => $data['assigneeId'] ?? null,
+            'active_assignee_id' => $activeId,
             'created_by_id' => $user->id,
             'status_changed_at' => now(),
         ]);
 
-        $this->recordStatusChange($task, $user, null, (int) $statusId);
-
-        if (! empty($data['assigneeId'])) {
-            $this->notifications->notifyAssignee($user, $task, (int) $data['assigneeId']);
+        if ($assigneeIds !== []) {
+            $task->assignees()->sync($assigneeIds);
+            $this->notifications->notifyNewAssignees($user, $task, $assigneeIds);
         }
+
+        $this->recordStatusChange($task, $user, null, (int) $statusId);
 
         $task->load($this->taskRelations());
 
@@ -217,13 +357,20 @@ class TaskController extends Controller
             'deadline' => ['nullable', 'date'],
             'statusId' => ['sometimes', 'integer'],
             'assigneeId' => ['nullable', 'integer'],
+            'assigneeIds' => ['nullable', 'array'],
+            'assigneeIds.*' => ['integer'],
+            'activeAssigneeId' => ['nullable', 'integer'],
             'projectId' => ['sometimes', 'integer'],
+        ], [
+            'title.min' => 'Укажите название задачи',
+            'title.max' => 'Название задачи не длиннее 255 символов',
+            'description.max' => 'Описание не длиннее 10000 символов',
         ]);
         if ($validator->fails()) {
             return response()->json(['error' => $validator->errors()->toArray()], 400);
         }
 
-        $task = Task::query()->with('status')->find($id);
+        $task = Task::query()->with(['status', 'assignees'])->find($id);
         if (! $task) {
             return response()->json(['error' => 'Задача не найдена'], 404);
         }
@@ -241,9 +388,6 @@ class TaskController extends Controller
         }
         if (array_key_exists('deadline', $data)) {
             $update['deadline'] = $data['deadline'];
-        }
-        if (array_key_exists('assigneeId', $data)) {
-            $update['assignee_id'] = $data['assigneeId'];
         }
 
         $fromStatusId = (int) $task->status_id;
@@ -281,25 +425,85 @@ class TaskController extends Controller
             }
         }
 
-        $previousAssigneeId = $task->assignee_id;
-
-        $task->update($update);
-
-        if ($toStatusId !== $fromStatusId) {
-            $this->recordStatusChange($task, $user, $fromStatusId, $toStatusId);
+        $statusChanging = $toStatusId !== $fromStatusId;
+        if ($statusChanging) {
+            if ($resp = $this->forbidStatusChangeUnlessAssignee($user, $task)) {
+                return $resp;
+            }
         }
 
-        if (array_key_exists('assignee_id', $update)) {
-            $newAssigneeId = $update['assignee_id'];
-            if ($newAssigneeId !== null && (int) $newAssigneeId !== (int) $previousAssigneeId) {
-                $this->notifications->notifyAssignee($user, $task, (int) $newAssigneeId);
+        // Sync assignees before resolving active for status change (list may change in same request).
+        $needsActiveChoice = false;
+        $assigneesTouched = array_key_exists('assigneeIds', $data)
+            || array_key_exists('assigneeId', $data);
+
+        if ($assigneesTouched) {
+            $nextIds = array_key_exists('assigneeIds', $data)
+                ? $this->normalizeAssigneeIds($data['assigneeIds'] ?? [])
+                : ($data['assigneeId'] !== null ? [(int) $data['assigneeId']] : []);
+
+            $explicitActive = array_key_exists('activeAssigneeId', $data)
+                ? ($data['activeAssigneeId'] !== null ? (int) $data['activeAssigneeId'] : null)
+                : null;
+
+            $added = $this->syncAssignees($task, $nextIds, $explicitActive);
+            $task->unsetRelation('assignees');
+            $task->load('assignees');
+            if ($added !== []) {
+                $this->notifications->notifyNewAssignees($user, $task, $added);
             }
+            if (count($nextIds) > 1 && ! array_key_exists('activeAssigneeId', $data)) {
+                $needsActiveChoice = true;
+            }
+        }
+
+        [$activeErr, $activeForStatus] = $this->resolveActiveForStatusChange(
+            $request,
+            $task->fresh(['assignees']) ?? $task,
+            $statusChanging,
+            $statusChanging
+                ? (
+                    isset($status) && (int) $status->id === $toStatusId
+                        ? $status
+                        : ProjectStatus::query()->find($toStatusId)
+                )
+                : null,
+        );
+        if ($activeErr) {
+            return $activeErr;
+        }
+
+        if ($statusChanging && $activeForStatus !== null) {
+            $update['active_assignee_id'] = $activeForStatus;
+        } elseif (array_key_exists('activeAssigneeId', $data) && ! $assigneesTouched) {
+            $active = $data['activeAssigneeId'] !== null ? (int) $data['activeAssigneeId'] : null;
+            $ids = $task->assigneeIds();
+            if ($active !== null && ! in_array($active, $ids, true)) {
+                return response()->json([
+                    'error' => 'Активный исполнитель должен быть в списке исполнителей задачи',
+                ], 400);
+            }
+            if ($ids === []) {
+                $active = null;
+            }
+            $update['active_assignee_id'] = $active;
+        }
+
+        if ($update !== []) {
+            $task->update($update);
+        }
+
+        if ($statusChanging) {
+            $this->recordStatusChange($task, $user, $fromStatusId, $toStatusId);
         }
 
         $task->load($this->taskRelations());
         $this->broadcastTaskUpdated((int) $task->id);
 
-        return response()->json(['task' => ApiPresenter::task($task, true)]);
+        return response()->json([
+            'task' => ApiPresenter::task($task, true),
+            'needsActiveChoice' => $needsActiveChoice,
+        ]);
     }
 
     public function take(Request $request, int $id): JsonResponse
@@ -309,15 +513,35 @@ class TaskController extends Controller
             return $resp;
         }
 
-        $task = Task::query()->find($id);
+        $task = Task::query()->with('assignees')->find($id);
         if (! $task) {
             return response()->json(['error' => 'Задача не найдена'], 404);
         }
 
-        $task->update(['assignee_id' => $user->id]);
-        $task->load($this->taskRelations());
+        $ids = $task->assigneeIds();
+        $already = in_array((int) $user->id, $ids, true);
+        if (! $already) {
+            $ids[] = (int) $user->id;
+            $task->assignees()->sync($ids);
+        }
 
-        return response()->json(['task' => ApiPresenter::task($task, true)]);
+        $needsActiveChoice = false;
+        if ($task->active_assignee_id === null) {
+            $task->active_assignee_id = $user->id;
+            $task->save();
+        }
+
+        if (count($ids) > 1) {
+            $needsActiveChoice = true;
+        }
+
+        $task->load($this->taskRelations());
+        $this->broadcastTaskUpdated((int) $task->id);
+
+        return response()->json([
+            'task' => ApiPresenter::task($task, true),
+            'needsActiveChoice' => $needsActiveChoice,
+        ]);
     }
 
     public function position(Request $request, int $id): JsonResponse
@@ -330,12 +554,13 @@ class TaskController extends Controller
         $validator = Validator::make($request->all(), [
             'statusId' => ['required', 'integer'],
             'index' => ['required', 'integer', 'min:0'],
+            'activeAssigneeId' => ['nullable', 'integer'],
         ]);
         if ($validator->fails()) {
             return response()->json(['error' => 'Укажите statusId и index'], 400);
         }
 
-        $task = Task::query()->find($id);
+        $task = Task::query()->with('assignees')->find($id);
         if (! $task) {
             return response()->json(['error' => 'Задача не найдена'], 404);
         }
@@ -350,6 +575,26 @@ class TaskController extends Controller
 
         $fromStatusId = (int) $task->status_id;
         $statusChanged = $status->id !== $task->status_id;
+
+        if ($statusChanged) {
+            if ($resp = $this->forbidStatusChangeUnlessAssignee($user, $task)) {
+                return $resp;
+            }
+            [$activeErr, $activeForStatus] = $this->resolveActiveForStatusChange(
+                $request,
+                $task,
+                true,
+                $status,
+            );
+            if ($activeErr) {
+                return $activeErr;
+            }
+        } else {
+            $activeForStatus = $task->active_assignee_id
+                ? (int) $task->active_assignee_id
+                : null;
+        }
+
         $siblings = Task::query()
             ->where('status_id', $status->id)
             ->where('id', '!=', $id)
@@ -365,13 +610,25 @@ class TaskController extends Controller
             array_slice($siblings, $index)
         );
 
-        DB::transaction(function () use ($task, $status, $statusChanged, $index, $orderedIds, $user, $fromStatusId) {
+        DB::transaction(function () use (
+            $task,
+            $status,
+            $statusChanged,
+            $index,
+            $orderedIds,
+            $user,
+            $fromStatusId,
+            $activeForStatus,
+        ) {
             $payload = [
                 'status_id' => $status->id,
                 'sort_order' => $index,
             ];
             if ($statusChanged) {
                 $payload['status_changed_at'] = now();
+                if ($activeForStatus !== null) {
+                    $payload['active_assignee_id'] = $activeForStatus;
+                }
             }
             $task->update($payload);
 
@@ -385,6 +642,7 @@ class TaskController extends Controller
         });
 
         $task = Task::query()->with($this->taskRelations())->find($id);
+        $this->broadcastTaskUpdated((int) $id);
 
         return response()->json(['task' => ApiPresenter::task($task, true)]);
     }

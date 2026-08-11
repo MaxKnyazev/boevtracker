@@ -22,12 +22,31 @@ import {
   UploadCloud,
   X,
 } from 'lucide-react';
-import { api, type Attachment, type Comment, type Project, type Task, type User } from '@/lib/api';
+import {
+  api,
+  isTaskAssignee,
+  taskActiveAssignee,
+  taskAssignees,
+  type Attachment,
+  type Comment,
+  type Project,
+  type PublicUser,
+  type Task,
+  type User,
+} from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { AppSelect } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -38,12 +57,15 @@ import {
   MentionText,
   MentionsTextarea,
 } from '@/components/mentions-textarea';
-import { PRIORITY_LABELS, formatDate, formatDuration, cn } from '@/lib/utils';
+import { PRIORITY_LABELS, formatDate, formatDuration, cn, MAX_TASK_TITLE_LENGTH } from '@/lib/utils';
+import { CLOSED_STATUS_NAME } from '@/lib/task-buckets';
 import {
   EmptyAssigneeAvatar,
   UserAvatar,
   displayName,
 } from '@/components/user-avatar';
+import { AssigneeStack } from '@/components/assignee-stack';
+import { ChooseActiveAssigneeDialog } from '@/components/choose-active-assignee-dialog';
 import {
   FileDropZone,
   MAX_UPLOAD_FILE_SIZE,
@@ -194,6 +216,14 @@ export function TaskModal({
   const [highlightedCommentId, setHighlightedCommentId] = useState<number | null>(
     null,
   );
+  const [activeChoice, setActiveChoice] = useState<{
+    mode: 'status' | 'assign';
+    statusId?: number;
+    assigneeIds?: number[];
+    assignees: PublicUser[];
+  } | null>(null);
+  const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
+  const [assigneeDraftIds, setAssigneeDraftIds] = useState<number[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const chatFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -292,6 +322,13 @@ export function TaskModal({
     try {
       const res = await api.updateTask(taskId, data);
       setTask(res.task);
+      if (res.needsActiveChoice && taskAssignees(res.task).length > 1) {
+        setActiveChoice({
+          mode: 'assign',
+          assigneeIds: taskAssignees(res.task).map((u) => u.id),
+          assignees: taskAssignees(res.task),
+        });
+      }
       await onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка сохранения');
@@ -300,10 +337,56 @@ export function TaskModal({
     }
   };
 
+  const changeStatus = async (statusId: number) => {
+    if (!task) return;
+    const assignees = taskAssignees(task);
+    if (assignees.length > 0) {
+      if (!isTaskAssignee(task, me?.id)) {
+        setError('Менять статус может только исполнитель задачи');
+        return;
+      }
+      const nextStatus = project?.statuses?.find((s) => s.id === statusId);
+      const toClosed = nextStatus?.name === CLOSED_STATUS_NAME;
+      if (!toClosed) {
+        setActiveChoice({
+          mode: 'status',
+          statusId,
+          assignees,
+        });
+        return;
+      }
+    }
+    await saveField({ statusId });
+  };
+
   const take = async () => {
-    const res = await api.takeTask(taskId);
-    setTask(res.task);
-    await onChanged();
+    setSaving(true);
+    try {
+      const res = await api.takeTask(taskId);
+      setTask(res.task);
+      if (res.needsActiveChoice && taskAssignees(res.task).length > 1) {
+        setActiveChoice({
+          mode: 'assign',
+          assigneeIds: taskAssignees(res.task).map((u) => u.id),
+          assignees: taskAssignees(res.task),
+        });
+      }
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!assigneePickerOpen || !task) return;
+    setAssigneeDraftIds(taskAssignees(task).map((u) => u.id));
+  }, [assigneePickerOpen, task]);
+
+  const applyAssigneeDraft = async (ids: number[]) => {
+    await saveField({ assigneeIds: ids });
+    setAssigneePickerOpen(false);
   };
 
   const sendComment = async (e?: FormEvent) => {
@@ -556,7 +639,7 @@ export function TaskModal({
     }
   };
 
-  const blockOutsideWhileLightbox = (
+  const blockOutsideInteractions = (
     event: Event | { preventDefault: () => void; target: EventTarget | null },
   ) => {
     if (lightboxFile) {
@@ -565,6 +648,15 @@ export function TaskModal({
     }
     const target = event.target as HTMLElement | null;
     if (target?.closest?.('[data-image-lightbox]')) {
+      event.preventDefault();
+      return;
+    }
+    // Portaled dropdown / select menus live outside DialogContent.
+    if (
+      target?.closest?.(
+        '[data-assignee-picker], [data-radix-dropdown-menu-content], [data-radix-select-content], [role="menu"]',
+      )
+    ) {
       event.preventDefault();
     }
   };
@@ -583,9 +675,9 @@ export function TaskModal({
             dialogContentRef.current?.focus({ preventScroll: true });
           }}
           tabIndex={-1}
-          onPointerDownOutside={blockOutsideWhileLightbox}
-          onInteractOutside={blockOutsideWhileLightbox}
-          onFocusOutside={blockOutsideWhileLightbox}
+          onPointerDownOutside={blockOutsideInteractions}
+          onInteractOutside={blockOutsideInteractions}
+          onFocusOutside={blockOutsideInteractions}
           onPaste={handleModalPaste}
           onEscapeKeyDown={(e) => {
             if (lightboxFile) {
@@ -609,8 +701,8 @@ export function TaskModal({
         >
           <Minus className="h-4 w-4" />
         </button>
-        <div className="p-6 [scrollbar-gutter:stable]">
-          <DialogHeader>
+        <div className="min-w-0 p-6 [scrollbar-gutter:stable]">
+          <DialogHeader className="min-w-0">
             <DialogTitle className="sr-only">{task.title}</DialogTitle>
             <div className="flex min-h-11 min-w-0 items-start gap-2 pr-14">
               {writable && editingTitle ? (
@@ -618,7 +710,8 @@ export function TaskModal({
                   <Input
                     value={titleDraft}
                     onChange={(e) => setTitleDraft(e.target.value)}
-                    className="h-11 flex-1 text-lg font-semibold"
+                    className="h-11 min-w-0 flex-1 text-lg font-semibold"
+                    maxLength={MAX_TASK_TITLE_LENGTH}
                     autoFocus
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
@@ -626,6 +719,12 @@ export function TaskModal({
                         void (async () => {
                           const next = titleDraft.trim();
                           if (!next) return;
+                          if (next.length > MAX_TASK_TITLE_LENGTH) {
+                            setError(
+                              `Название задачи не длиннее ${MAX_TASK_TITLE_LENGTH} символов`,
+                            );
+                            return;
+                          }
                           await saveField({ title: next });
                           setEditingTitle(false);
                         })();
@@ -639,12 +738,22 @@ export function TaskModal({
                     type="button"
                     size="icon"
                     className="h-11 w-11 shrink-0"
-                    disabled={saving || !titleDraft.trim()}
+                    disabled={
+                      saving ||
+                      !titleDraft.trim() ||
+                      titleDraft.trim().length > MAX_TASK_TITLE_LENGTH
+                    }
                     title="Принять"
                     onClick={() => {
                       void (async () => {
                         const next = titleDraft.trim();
                         if (!next) return;
+                        if (next.length > MAX_TASK_TITLE_LENGTH) {
+                          setError(
+                            `Название задачи не длиннее ${MAX_TASK_TITLE_LENGTH} символов`,
+                          );
+                          return;
+                        }
                         await saveField({ title: next });
                         setEditingTitle(false);
                       })();
@@ -666,7 +775,7 @@ export function TaskModal({
               ) : (
                 <>
                   <h2
-                    className="min-w-0 flex-1 truncate py-2 text-lg font-semibold leading-snug"
+                    className="min-w-0 flex-1 py-2 text-lg font-semibold leading-snug break-words [overflow-wrap:anywhere]"
                     title={task.title}
                   >
                     {task.title}
@@ -693,8 +802,8 @@ export function TaskModal({
 
           {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
 
-          <div className="mt-4 grid gap-4 md:grid-cols-[1fr_220px]">
-            <div className="space-y-4 min-w-0">
+          <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="min-w-0 space-y-4">
               <div className="space-y-2">
                 <div className="flex h-8 items-center justify-between gap-2">
                   <Label className="mb-0">Описание</Label>
@@ -1280,12 +1389,12 @@ export function TaskModal({
               </div>
             </div>
 
-            <aside className="h-fit space-y-3 rounded-xl border border-border bg-background/50 p-3">
+            <aside className="h-fit min-w-0 space-y-3 rounded-xl border border-border bg-background/50 p-3">
               <Meta label="Статус">
                 {writable ? (
                   <AppSelect
                     value={String(task.statusId)}
-                    onValueChange={(v) => saveField({ statusId: Number(v) })}
+                    onValueChange={(v) => void changeStatus(Number(v))}
                     options={(project?.statuses || []).map((s) => ({
                       value: String(s.id),
                       label: s.name,
@@ -1313,38 +1422,82 @@ export function TaskModal({
                 )}
               </Meta>
 
-              <Meta label="Исполнитель">
+              <Meta label="Исполнители">
                 {writable ? (
-                  <AppSelect
-                    value={
-                      task.assigneeId != null ? String(task.assigneeId) : 'none'
-                    }
-                    onValueChange={(v) =>
-                      saveField({
-                        assigneeId: v === 'none' ? null : Number(v),
-                      })
-                    }
-                    options={[
-                      {
-                        value: 'none',
-                        label: 'Не назначен',
-                        leading: (
-                          <EmptyAssigneeAvatar
-                            size="sm"
-                            title="Не назначен"
-                          />
-                        ),
-                      },
-                      ...users.map((u) => ({
-                        value: String(u.id),
-                        label: displayName(u),
-                        leading: <UserAvatar user={u} size="sm" />,
-                      })),
-                    ]}
-                    className="w-full text-sm"
-                  />
+                  <DropdownMenu
+                    modal={false}
+                    open={assigneePickerOpen}
+                    onOpenChange={setAssigneePickerOpen}
+                  >
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        className="inline-flex items-center outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+                        title="Выбрать исполнителей"
+                      >
+                        <AssigneeStack task={task} size="sm" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="start"
+                      className="w-52 p-0"
+                      data-assignee-picker
+                      onCloseAutoFocus={(e) => e.preventDefault()}
+                    >
+                      <DropdownMenuItem
+                        disabled={saving}
+                        className="mx-1 mt-1 text-muted-foreground"
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          setAssigneeDraftIds([]);
+                          void applyAssigneeDraft([]);
+                        }}
+                      >
+                        <EmptyAssigneeAvatar size="sm" />
+                        Без исполнителей
+                      </DropdownMenuItem>
+                      {users.map((u) => {
+                        const selected = assigneeDraftIds.includes(u.id);
+                        return (
+                          <DropdownMenuCheckboxItem
+                            key={u.id}
+                            checked={selected}
+                            disabled={saving}
+                            className="mx-1"
+                            onSelect={(e) => e.preventDefault()}
+                            onCheckedChange={(checked) => {
+                              setAssigneeDraftIds((prev) =>
+                                checked
+                                  ? prev.includes(u.id)
+                                    ? prev
+                                    : [...prev, u.id]
+                                  : prev.filter((id) => id !== u.id),
+                              );
+                            }}
+                          >
+                            <UserAvatar user={u} size="sm" />
+                            <span className="min-w-0 flex-1 truncate">
+                              {displayName(u)}
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                        );
+                      })}
+                      <DropdownMenuSeparator />
+                      <div className="p-1.5">
+                        <button
+                          type="button"
+                          disabled={saving}
+                          className="w-full rounded-md bg-primary px-2 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                          onClick={() => void applyAssigneeDraft(assigneeDraftIds)}
+                        >
+                          Применить
+                        </button>
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 ) : (
-                  displayName(task.assignee)
+                  <AssigneeStack task={task} size="sm" />
                 )}
               </Meta>
 
@@ -1433,8 +1586,8 @@ export function TaskModal({
                   <Button
                     className="w-full"
                     variant="secondary"
-                    onClick={take}
-                    disabled={saving}
+                    onClick={() => void take()}
+                    disabled={saving || isTaskAssignee(task, me?.id)}
                   >
                     Взять в работу
                   </Button>
@@ -1507,6 +1660,44 @@ export function TaskModal({
         <ImageLightbox
           file={lightboxFile}
           onClose={() => setLightboxFile(null)}
+        />
+      )}
+
+      {activeChoice && (
+        <ChooseActiveAssigneeDialog
+          open
+          title={
+            activeChoice.mode === 'status'
+              ? 'Кто работает в следующем статусе?'
+              : 'Кто активный исполнитель?'
+          }
+          description={
+            activeChoice.mode === 'status'
+              ? 'Выберите активного исполнителя для нового статуса.'
+              : 'У задачи несколько исполнителей. Выберите активного для текущего статуса.'
+          }
+          assignees={activeChoice.assignees}
+          initialUserId={
+            taskActiveAssignee(task)?.id ?? activeChoice.assignees[0]?.id
+          }
+          confirmLabel={activeChoice.mode === 'status' ? 'Перевести' : 'Подтвердить'}
+          onCancel={() => setActiveChoice(null)}
+          onConfirm={async (userId) => {
+            const choice = activeChoice;
+            setActiveChoice(null);
+            if (choice.mode === 'status' && choice.statusId != null) {
+              await saveField({
+                statusId: choice.statusId,
+                activeAssigneeId: userId,
+              });
+              return;
+            }
+            await saveField({
+              assigneeIds:
+                choice.assigneeIds ?? choice.assignees.map((u) => u.id),
+              activeAssigneeId: userId,
+            });
+          }}
         />
       )}
     </>

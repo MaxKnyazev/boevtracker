@@ -1,17 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDown, ArrowUp, ArrowUpDown, ListTodo } from 'lucide-react';
-import { api, type Project, type Task, type User } from '@/lib/api';
+import { api, taskActiveAssignee, type Project, type Task, type User } from '@/lib/api';
 import { canWrite, useAuthStore } from '@/store/auth';
 import { EmptyState, PageHeader } from '@/components/layout';
 import { TaskViewControls } from '@/components/task-view-controls';
 import { TaskModal } from '@/components/task-modal';
 import { Badge } from '@/components/ui/badge';
-import {
-  EmptyAssigneeAvatar,
-  UserAvatar,
-  displayName,
-} from '@/components/user-avatar';
+import { displayName } from '@/components/user-avatar';
 import {
   DEFAULT_TASK_VIEW,
   applyTaskView,
@@ -21,6 +17,7 @@ import {
   type TaskViewState,
 } from '@/lib/task-view';
 import { PRIORITY_LABELS, formatDate, formatDuration, cn } from '@/lib/utils';
+import { AssigneeStack } from '@/components/assignee-stack';
 
 const priorityColor: Record<string, string> = {
   LOW: 'border-slate-500/40 text-slate-600 dark:text-slate-300',
@@ -296,14 +293,10 @@ export function TasksPage() {
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
-                      {task.assignee ? (
-                        <UserAvatar user={task.assignee} size="sm" />
-                      ) : (
-                        <EmptyAssigneeAvatar size="sm" />
-                      )}
+                      <AssigneeStack task={task} size="sm" />
                       <span className="truncate text-muted-foreground">
-                        {task.assignee
-                          ? displayName(task.assignee)
+                        {taskActiveAssignee(task)
+                          ? displayName(taskActiveAssignee(task))
                           : 'Без исполнителя'}
                       </span>
                     </div>
