@@ -897,6 +897,7 @@ export function ProjectPage({
         <MoveBoardDialog
           task={moveTask}
           boards={boards}
+          currentBoardId={project?.boardId ?? moveTask.project?.boardId}
           onClose={() => setMoveTask(null)}
           onMoved={async () => {
             setMoveTask(null);
@@ -908,6 +909,7 @@ export function ProjectPage({
       {moveProjectTask && (
         <MoveProjectDialog
           task={moveProjectTask}
+          currentBoardId={project?.boardId ?? moveProjectTask.project?.boardId}
           projects={
             boards.find(
               (b) =>

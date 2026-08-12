@@ -3,34 +3,39 @@ import { api, type Project, type Task } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/input';
+import { AppSelect } from '@/components/ui/select';
+
+const NONE = '__none__';
 
 export function MoveProjectDialog({
   task,
   projects: projectsProp,
+  currentBoardId,
   onClose,
   onMoved,
 }: {
   task: Task;
   projects: Project[];
+  currentBoardId?: number | null;
   onClose: () => void;
   onMoved: () => Promise<void>;
 }) {
   const [projects, setProjects] = useState(projectsProp);
   const [loadingProjects, setLoadingProjects] = useState(false);
+  const boardId = currentBoardId ?? task.project?.boardId ?? null;
 
   useEffect(() => {
     setProjects(projectsProp);
   }, [projectsProp]);
 
   useEffect(() => {
-    const boardId = task.project?.boardId;
     if (projectsProp.length > 0 || boardId == null) return;
     setLoadingProjects(true);
     void api
       .board(boardId)
       .then((data) => setProjects(data.board.projects || []))
       .finally(() => setLoadingProjects(false));
-  }, [projectsProp.length, task.project?.boardId]);
+  }, [projectsProp.length, boardId]);
 
   const options = useMemo(
     () => projects.filter((p) => p.id !== task.projectId),
@@ -40,13 +45,13 @@ export function MoveProjectDialog({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (options.length > 0 && projectId === '') {
-      setProjectId(options[0]!.id);
-    }
-  }, [options, projectId]);
-
-  const boardId = task.project?.boardId;
+  const projectOptions = useMemo(
+    () => [
+      { value: NONE, label: 'Выберите проект' },
+      ...options.map((p) => ({ value: String(p.id), label: p.name })),
+    ],
+    [options],
+  );
 
   const submit = async () => {
     if (!projectId || boardId == null) {
@@ -88,20 +93,14 @@ export function MoveProjectDialog({
           ) : (
             <div className="space-y-2">
               <Label>Проект</Label>
-              <select
-                className="h-10 w-full cursor-pointer rounded-md border border-input bg-background px-3 text-sm"
-                value={projectId}
-                onChange={(e) =>
-                  setProjectId(e.target.value ? Number(e.target.value) : '')
+              <AppSelect
+                value={projectId === '' ? NONE : String(projectId)}
+                onValueChange={(v) =>
+                  setProjectId(v === NONE ? '' : Number(v))
                 }
-              >
-                <option value="">Выберите проект</option>
-                {options.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                options={projectOptions}
+                className="w-full"
+              />
             </div>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}

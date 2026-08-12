@@ -3,21 +3,28 @@ import { api, type Board, type Project, type Task } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/input';
+import { AppSelect } from '@/components/ui/select';
+
+const NONE = '__none__';
 
 export function MoveBoardDialog({
   task,
   boards,
+  currentBoardId,
   onClose,
   onMoved,
 }: {
   task: Task;
   boards: Board[];
+  currentBoardId?: number | null;
   onClose: () => void;
   onMoved: () => Promise<void>;
 }) {
+  const activeBoardId = currentBoardId ?? task.project?.boardId ?? null;
   const otherBoards = useMemo(
-    () => boards.filter((b) => b.id !== task.project?.boardId),
-    [boards, task.project?.boardId],
+    () =>
+      boards.filter((b) => activeBoardId == null || b.id !== activeBoardId),
+    [boards, activeBoardId],
   );
   const [boardId, setBoardId] = useState<number | ''>('');
   const [projectId, setProjectId] = useState<number | ''>('');
@@ -36,6 +43,22 @@ export function MoveBoardDialog({
       setProjectId('');
     });
   }, [boardId]);
+
+  const boardOptions = useMemo(
+    () => [
+      { value: NONE, label: 'Выберите доску' },
+      ...otherBoards.map((b) => ({ value: String(b.id), label: b.name })),
+    ],
+    [otherBoards],
+  );
+
+  const projectOptions = useMemo(
+    () => [
+      { value: NONE, label: 'Выберите проект' },
+      ...projects.map((p) => ({ value: String(p.id), label: p.name })),
+    ],
+    [projects],
+  );
 
   const submit = async () => {
     if (!boardId || !projectId) {
@@ -75,38 +98,26 @@ export function MoveBoardDialog({
             <>
               <div className="space-y-2">
                 <Label>Доска</Label>
-                <select
-                  className="h-10 w-full cursor-pointer rounded-md border border-input bg-background px-3 text-sm"
-                  value={boardId}
-                  onChange={(e) =>
-                    setBoardId(e.target.value ? Number(e.target.value) : '')
+                <AppSelect
+                  value={boardId === '' ? NONE : String(boardId)}
+                  onValueChange={(v) =>
+                    setBoardId(v === NONE ? '' : Number(v))
                   }
-                >
-                  <option value="">Выберите доску</option>
-                  {otherBoards.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
+                  options={boardOptions}
+                  className="w-full"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Проект</Label>
-                <select
-                  className="h-10 w-full cursor-pointer rounded-md border border-input bg-background px-3 text-sm"
-                  value={projectId}
-                  onChange={(e) =>
-                    setProjectId(e.target.value ? Number(e.target.value) : '')
+                <AppSelect
+                  value={projectId === '' ? NONE : String(projectId)}
+                  onValueChange={(v) =>
+                    setProjectId(v === NONE ? '' : Number(v))
                   }
+                  options={projectOptions}
+                  className="w-full"
                   disabled={!boardId}
-                >
-                  <option value="">Выберите проект</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             </>
           )}
@@ -114,7 +125,7 @@ export function MoveBoardDialog({
           <Button
             className="w-full cursor-pointer"
             onClick={() => void submit()}
-            disabled={loading || otherBoards.length === 0}
+            disabled={loading || otherBoards.length === 0 || !boardId || !projectId}
           >
             {loading ? 'Перенос...' : 'Перенести'}
           </Button>
