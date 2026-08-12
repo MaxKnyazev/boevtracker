@@ -47,6 +47,7 @@ import { MentionsTextarea } from '@/components/mentions-textarea';
 import { TaskCard } from '@/components/task-card';
 import { TaskModal } from '@/components/task-modal';
 import { MoveBoardDialog } from '@/components/move-board-dialog';
+import { MoveProjectDialog } from '@/components/move-project-dialog';
 import { TaskViewControls } from '@/components/task-view-controls';
 import { ChooseActiveAssigneeDialog } from '@/components/choose-active-assignee-dialog';
 import {
@@ -211,6 +212,7 @@ export function ProjectPage({
   const [columns, setColumns] = useState<Columns>({});
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [moveTask, setMoveTask] = useState<Task | null>(null);
+  const [moveProjectTask, setMoveProjectTask] = useState<Task | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [statusName, setStatusName] = useState('');
@@ -803,6 +805,7 @@ export function ProjectPage({
                                 writable={writable}
                                 onOpen={() => setSelectedTaskId(task.id)}
                                 onMoveBoard={() => setMoveTask(task)}
+                                onMoveProject={() => setMoveProjectTask(task)}
                                 onAssign={async (assigneeIds) => {
                                   const res = await api.updateTask(task.id, {
                                     assigneeIds,
@@ -897,6 +900,24 @@ export function ProjectPage({
           onClose={() => setMoveTask(null)}
           onMoved={async () => {
             setMoveTask(null);
+            await load();
+          }}
+        />
+      )}
+
+      {moveProjectTask && (
+        <MoveProjectDialog
+          task={moveProjectTask}
+          projects={
+            boards.find(
+              (b) =>
+                b.id ===
+                (moveProjectTask.project?.boardId ?? project?.boardId),
+            )?.projects || []
+          }
+          onClose={() => setMoveProjectTask(null)}
+          onMoved={async () => {
+            setMoveProjectTask(null);
             await load();
           }}
         />
@@ -1269,6 +1290,7 @@ function SortableTask({
   writable,
   onOpen,
   onMoveBoard,
+  onMoveProject,
   onAssign,
 }: {
   id: string;
@@ -1277,6 +1299,7 @@ function SortableTask({
   writable: boolean;
   onOpen: () => void;
   onMoveBoard: () => void;
+  onMoveProject: () => void;
   onAssign: (assigneeIds: number[]) => Promise<void>;
 }) {
   const {
@@ -1309,6 +1332,7 @@ function SortableTask({
       dragListeners={listeners}
       onOpen={onOpen}
       onMoveBoard={onMoveBoard}
+      onMoveProject={onMoveProject}
       onAssign={onAssign}
     />
   );

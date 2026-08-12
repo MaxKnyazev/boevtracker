@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, type Board, type Project, type Task } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,10 @@ export function MoveBoardDialog({
   onClose: () => void;
   onMoved: () => Promise<void>;
 }) {
+  const otherBoards = useMemo(
+    () => boards.filter((b) => b.id !== task.project?.boardId),
+    [boards, task.project?.boardId],
+  );
   const [boardId, setBoardId] = useState<number | ''>('');
   const [projectId, setProjectId] = useState<number | ''>('');
   const [projects, setProjects] = useState<Project[]>([]);
@@ -59,42 +63,59 @@ export function MoveBoardDialog({
           <DialogTitle>Перенести на другую доску</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
-          Задача «{task.title}». Если статуса с тем же именем нет, будет выбран «Открыта».
+          Задача «{task.title}». Если статуса с тем же именем нет, будет выбран
+          «Открыта».
         </p>
         <div className="space-y-3">
-          <div className="space-y-2">
-            <Label>Доска</Label>
-            <select
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={boardId}
-              onChange={(e) => setBoardId(e.target.value ? Number(e.target.value) : '')}
-            >
-              <option value="">Выберите доску</option>
-              {boards.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-2">
-            <Label>Проект</Label>
-            <select
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : '')}
-              disabled={!boardId}
-            >
-              <option value="">Выберите проект</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {otherBoards.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Других рабочих пространств нет.
+            </p>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label>Доска</Label>
+                <select
+                  className="h-10 w-full cursor-pointer rounded-md border border-input bg-background px-3 text-sm"
+                  value={boardId}
+                  onChange={(e) =>
+                    setBoardId(e.target.value ? Number(e.target.value) : '')
+                  }
+                >
+                  <option value="">Выберите доску</option>
+                  {otherBoards.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Проект</Label>
+                <select
+                  className="h-10 w-full cursor-pointer rounded-md border border-input bg-background px-3 text-sm"
+                  value={projectId}
+                  onChange={(e) =>
+                    setProjectId(e.target.value ? Number(e.target.value) : '')
+                  }
+                  disabled={!boardId}
+                >
+                  <option value="">Выберите проект</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button className="w-full" onClick={submit} disabled={loading}>
+          <Button
+            className="w-full cursor-pointer"
+            onClick={() => void submit()}
+            disabled={loading || otherBoards.length === 0}
+          >
             {loading ? 'Перенос...' : 'Перенести'}
           </Button>
         </div>
