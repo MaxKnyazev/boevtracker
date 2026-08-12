@@ -46,6 +46,7 @@ export function TaskCard({
   dragListeners,
   onOpen,
   onMoveBoard,
+  onMoveProject,
   onAssign,
 }: {
   task: Task;
@@ -59,6 +60,7 @@ export function TaskCard({
   dragListeners?: object;
   onOpen?: () => void;
   onMoveBoard?: () => void;
+  onMoveProject?: () => void;
   onAssign?: (assigneeIds: number[]) => Promise<void>;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -270,16 +272,23 @@ export function TaskCard({
     </div>
   );
 
-  if (!writable || preview || !onMoveBoard) return card;
+  if (!writable || preview || (!onMoveBoard && !onMoveProject)) return card;
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onSelect={() => onOpen?.()}>Открыть</ContextMenuItem>
-        <ContextMenuItem onSelect={onMoveBoard}>
-          Перенести на другую доску
-        </ContextMenuItem>
+        {onMoveProject ? (
+          <ContextMenuItem onSelect={onMoveProject}>
+            Перенести в другой проект
+          </ContextMenuItem>
+        ) : null}
+        {onMoveBoard ? (
+          <ContextMenuItem onSelect={onMoveBoard}>
+            Перенести на другую доску
+          </ContextMenuItem>
+        ) : null}
       </ContextMenuContent>
     </ContextMenu>
   );
