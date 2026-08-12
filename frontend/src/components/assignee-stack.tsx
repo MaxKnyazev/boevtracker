@@ -1,4 +1,4 @@
-import { UserAvatar, EmptyAssigneeAvatar, displayName } from '@/components/user-avatar';
+import { UserAvatar, EmptyAssigneeAvatar, displayName, avatarOuterSize } from '@/components/user-avatar';
 import {
   taskActiveAssignee,
   taskAssignees,
@@ -31,7 +31,7 @@ export function AssigneeStack({
   const others = assignees.filter((u) => u.id !== active?.id);
   const behind = others[0];
   const extra = assignees.length - 1;
-  const badgePx = size === 'sm' ? 28 : 36;
+  const badgePx = avatarOuterSize(size === 'sm' ? 28 : 36);
 
   if (assignees.length === 2 && behind) {
     return (

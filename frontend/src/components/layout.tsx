@@ -146,7 +146,14 @@ export function AppLayout() {
         >
           {collapsed ? (
             <div className="flex flex-col items-center gap-2">
-              <UserAvatar user={user} size="md" title={displayName(user)} />
+              <button
+                type="button"
+                className="rounded-full outline-none ring-ring transition hover:opacity-90 focus-visible:ring-2"
+                title={displayName(user)}
+                onClick={() => navigate('/profile')}
+              >
+                <UserAvatar user={user} size="md" />
+              </button>
               <ThemeToggle />
               <Button
                 variant="outline"
@@ -161,15 +168,22 @@ export function AppLayout() {
           ) : (
             <>
               <div className="mb-3 flex items-center gap-2">
-                <UserAvatar user={user} size="md" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">
-                    {displayName(user)}
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg p-1 text-left outline-none transition hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => navigate('/profile')}
+                  title="Личный кабинет"
+                >
+                  <UserAvatar user={user} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">
+                      {displayName(user)}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {user ? ROLE_LABELS[user.role] : ''}
+                    </div>
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {user ? ROLE_LABELS[user.role] : ''}
-                  </div>
-                </div>
+                </button>
                 <ThemeToggle />
               </div>
               <Button variant="outline" className="w-full" onClick={onLogout}>

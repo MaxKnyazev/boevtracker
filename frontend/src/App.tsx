@@ -9,6 +9,7 @@ import { ProjectPage } from '@/pages/project';
 import { TasksPage } from '@/pages/tasks';
 import { UsersPage } from '@/pages/users';
 import { NotificationsPage } from '@/pages/notifications';
+import { ProfilePage } from '@/pages/profile';
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { user, initialized, fetchMe } = useAuthStore();
@@ -94,6 +95,7 @@ export default function App() {
         <Route index element={<BoardsPage />} />
         <Route path="tasks" element={<TasksPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="profile" element={<ProfilePage />} />
         <Route path="boards/:boardId" element={<BoardDetailPage />} />
         <Route path="projects/:projectId" element={<ProjectPage />} />
         <Route element={<AdminOnly />}>

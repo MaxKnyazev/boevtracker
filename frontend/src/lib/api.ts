@@ -10,6 +10,9 @@ export type User = {
   firstName: string;
   lastName: string;
   avatarColor: string;
+  avatarUrl?: string | null;
+  avatarSourceUrl?: string | null;
+  avatarCrop?: { zoom: number; panX: number; panY: number } | null;
   role: Role;
   createdAt: string;
 };
@@ -20,6 +23,7 @@ export type PublicUser = {
   firstName: string;
   lastName: string;
   avatarColor: string;
+  avatarUrl?: string | null;
   role?: Role;
 };
 
@@ -388,6 +392,31 @@ export const api = {
     request<{ user: User }>('/api/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
   me: () => request<{ user: User }>('/api/auth/me'),
+
+  updateProfile: (body: {
+    firstName?: string;
+    lastName?: string;
+    avatarColor?: string;
+  }) =>
+    request<{ user: User }>('/api/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  uploadProfileAvatar: (payload: {
+    cropped: File;
+    source?: File | null;
+    crop: { zoom: number; panX: number; panY: number };
+  }) => {
+    const form = new FormData();
+    form.append('file', payload.cropped);
+    form.append('crop', JSON.stringify(payload.crop));
+    if (payload.source) {
+      form.append('source', payload.source);
+    }
+    return uploadFormData<{ user: User }>('/api/profile/avatar', form);
+  },
+  deleteProfileAvatar: () =>
+    request<{ user: User }>('/api/profile/avatar', { method: 'DELETE' }),
 
   users: () => request<{ users: User[] }>('/api/users'),
   assignableUsers: () => request<{ users: User[] }>('/api/users/assignable'),

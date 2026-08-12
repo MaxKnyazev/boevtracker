@@ -19,15 +19,26 @@ class ApiPresenter
 {
     public static function user(User $user): array
     {
-        return [
+        $data = [
             'id' => $user->id,
             'username' => $user->username,
             'firstName' => $user->first_name,
             'lastName' => $user->last_name,
             'avatarColor' => $user->avatar_color,
+            'avatarUrl' => self::avatarUrl($user),
             'role' => $user->role,
             'createdAt' => self::date($user->created_at),
         ];
+
+        if ($user->avatar_key || $user->avatar_source_key) {
+            $data['avatarSourceUrl'] = self::avatarSourceUrl($user);
+            $data['avatarCrop'] = self::avatarCrop($user);
+        } else {
+            $data['avatarSourceUrl'] = null;
+            $data['avatarCrop'] = null;
+        }
+
+        return $data;
     }
 
     public static function publicUser(?User $user): ?array
@@ -42,7 +53,54 @@ class ApiPresenter
             'firstName' => $user->first_name,
             'lastName' => $user->last_name,
             'avatarColor' => $user->avatar_color,
+            'avatarUrl' => self::avatarUrl($user),
             'role' => $user->role,
+        ];
+    }
+
+    private static function avatarUrl(User $user): ?string
+    {
+        if (! $user->avatar_key) {
+            return null;
+        }
+
+        $version = $user->updated_at?->getTimestamp() ?? time();
+
+        return '/api/users/'.$user->id.'/avatar?v='.$version;
+    }
+
+    private static function avatarSourceUrl(User $user): ?string
+    {
+        if (! $user->avatar_source_key && ! $user->avatar_key) {
+            return null;
+        }
+
+        $version = $user->updated_at?->getTimestamp() ?? time();
+
+        return '/api/profile/avatar-source?v='.$version;
+    }
+
+    /** @return array{zoom: float, panX: float, panY: float}|null */
+    private static function avatarCrop(User $user): ?array
+    {
+        $crop = $user->avatar_crop;
+        if (! is_array($crop)) {
+            return null;
+        }
+
+        if (
+            ! isset($crop['zoom'], $crop['panX'], $crop['panY'])
+            || ! is_numeric($crop['zoom'])
+            || ! is_numeric($crop['panX'])
+            || ! is_numeric($crop['panY'])
+        ) {
+            return null;
+        }
+
+        return [
+            'zoom' => (float) $crop['zoom'],
+            'panX' => (float) $crop['panX'],
+            'panY' => (float) $crop['panY'],
         ];
     }
 

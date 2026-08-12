@@ -13,11 +13,18 @@ class User extends Model
         'first_name',
         'last_name',
         'avatar_color',
+        'avatar_key',
+        'avatar_source_key',
+        'avatar_crop',
         'role',
     ];
 
     protected $hidden = [
         'password_hash',
+    ];
+
+    protected $casts = [
+        'avatar_crop' => 'array',
     ];
 
     public function boards(): HasMany

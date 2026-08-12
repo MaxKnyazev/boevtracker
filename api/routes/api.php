@@ -4,6 +4,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
 use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\RealtimeController;
 use App\Http\Controllers\StatusController;
@@ -38,8 +39,14 @@ Route::middleware(AuthenticateJwt::class)->group(function () {
     Route::patch('/notification-subscriptions/{id}', [NotificationController::class, 'updateSubscription'])->whereNumber('id');
     Route::delete('/notification-subscriptions/{id}', [NotificationController::class, 'destroySubscription'])->whereNumber('id');
 
+    Route::patch('/profile', [ProfileController::class, 'update']);
+    Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar']);
+    Route::delete('/profile/avatar', [ProfileController::class, 'deleteAvatar']);
+    Route::get('/profile/avatar-source', [ProfileController::class, 'showAvatarSource']);
+
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/users/assignable', [UserController::class, 'assignable']);
+    Route::get('/users/{id}/avatar', [ProfileController::class, 'showAvatar'])->whereNumber('id');
     Route::patch('/users/{id}/role', [UserController::class, 'setRole'])->whereNumber('id');
     Route::post('/users/{id}/approve', [UserController::class, 'approve'])->whereNumber('id');
     Route::post('/users/{id}/reject', [UserController::class, 'reject'])->whereNumber('id');
