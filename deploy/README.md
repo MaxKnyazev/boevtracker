@@ -115,6 +115,23 @@ php artisan migrate --force
 php artisan config:clear
 php artisan route:clear
 ```
+
+## 5.1. Часовой пояс (смены / учёт времени)
+
+На проде время должно быть **Москва** (`UTC+3`). В `app_laravel/.env`:
+
+```env
+APP_TIMEZONE=Europe/Moscow
+DB_TIMEZONE=+03:00
+```
+
+Затем:
+
+```bash
+php artisan config:clear
+```
+
+Если оставить `APP_TIMEZONE=UTC`, а в БД лежат «московские» wall-clock значения, в UI время уедет на **+3 часа** (16:53 → 19:53).
 ## 6. Локальная сборка пакета (без GitHub)
 
 ```bash
