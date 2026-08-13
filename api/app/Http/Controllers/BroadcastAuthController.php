@@ -37,6 +37,8 @@ class BroadcastAuthController extends Controller
             if (! Task::query()->whereKey($taskId)->exists()) {
                 return response()->json(['error' => 'Задача не найдена'], 404);
             }
+        } elseif ($channelName === 'private-shifts') {
+            // Any authenticated non-pending user may watch shift updates.
         } else {
             return response()->json(['error' => 'Неизвестный канал'], 403);
         }

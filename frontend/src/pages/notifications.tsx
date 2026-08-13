@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AtSign,
   Bell,
@@ -23,11 +23,8 @@ import {
   type Board,
   type NotificationSettings,
   type NotificationSubscription,
-  type Project,
-  type User,
 } from '@/lib/api';
 import { EmptyState, PageHeader } from '@/components/layout';
-import { TaskModal } from '@/components/task-modal';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -37,7 +34,6 @@ import {
 } from '@/components/ui/dialog';
 import { AppSelect } from '@/components/ui/select';
 import { UserAvatar, displayName } from '@/components/user-avatar';
-import { canWrite, useAuthStore } from '@/store/auth';
 import { useNotificationsStore } from '@/store/notifications';
 import {
   ensureNotificationPermission,
@@ -152,19 +148,15 @@ function Toggle({
 }
 
 export function NotificationsPage() {
-  const me = useAuthStore((s) => s.user);
-  const writable = canWrite(me?.role);
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { setUnreadCount, markLocalRead, markAllLocalRead, refreshUnread } =
+  const { setUnreadCount, markLocalRead, markAllLocalRead } =
     useNotificationsStore();
   const liveRevision = useNotificationsStore((s) => s.liveRevision);
 
   const [items, setItems] = useState<AppNotification[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [permission, setPermission] = useState<PermissionState>(() =>
     notificationsSupported() ? getNotificationPermission() : 'unsupported',
   );
@@ -190,15 +182,13 @@ export function NotificationsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [data, assignable, prefs, subs, boardsRes] = await Promise.all([
+      const [data, prefs, subs, boardsRes] = await Promise.all([
         api.notifications(),
-        api.assignableUsers(),
         api.notificationSettings(),
         api.notificationSubscriptions(),
         api.boards(),
       ]);
       setItems(data.notifications);
-      setUsers(assignable.users);
       setUnreadCount(data.unreadCount);
       setSettings(prefs.settings);
       setSubscriptions(subs.subscriptions);
@@ -211,24 +201,29 @@ export function NotificationsPage() {
     }
   }, [setUnreadCount]);
 
-  const openTask = useCallback(async (taskId: number) => {
-    try {
-      const res = await api.task(taskId);
-      setSelectedTaskId(taskId);
-      setSelectedProject(
-        res.task.project
-          ? ({
-              id: res.task.project.id,
-              name: res.task.project.name,
-              boardId: res.task.project.boardId,
-              statuses: res.task.status ? [res.task.status] : [],
-            } as Project)
-          : null,
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось открыть задачу');
-    }
-  }, []);
+  const goToTask = useCallback(
+    async (taskId: number) => {
+      try {
+        const res = await api.task(taskId);
+        const project = res.task.project;
+        if (!project?.id) {
+          setError('У задачи нет проекта');
+          return;
+        }
+        const boardId = project.boardId ?? project.board?.id;
+        if (boardId) {
+          navigate(`/boards/${boardId}?tab=${project.id}&task=${taskId}`);
+        } else {
+          navigate(`/projects/${project.id}?task=${taskId}`);
+        }
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Не удалось открыть задачу',
+        );
+      }
+    },
+    [navigate],
+  );
 
   useEffect(() => {
     void load();
@@ -255,11 +250,11 @@ export function NotificationsPage() {
     if (!raw) return;
     const taskId = Number(raw);
     if (!Number.isFinite(taskId) || taskId <= 0) return;
-    void openTask(taskId);
     const next = new URLSearchParams(searchParams);
     next.delete('task');
     setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams, openTask]);
+    void goToTask(taskId);
+  }, [searchParams, setSearchParams, goToTask]);
 
   const projectOptions = useMemo(() => {
     const list: { value: string; label: string }[] = [];
@@ -454,7 +449,7 @@ export function NotificationsPage() {
     }
 
     if (n.taskId != null) {
-      await openTask(n.taskId);
+      await goToTask(n.taskId);
     }
   };
 
@@ -891,24 +886,6 @@ export function NotificationsPage() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {selectedTaskId != null && (
-        <TaskModal
-          taskId={selectedTaskId}
-          project={selectedProject}
-          users={users}
-          writable={writable}
-          onClose={() => {
-            setSelectedTaskId(null);
-            setSelectedProject(null);
-            void refreshUnread();
-            void load();
-          }}
-          onChanged={async () => {
-            await refreshUnread();
-          }}
-        />
-      )}
     </div>
   );
 }

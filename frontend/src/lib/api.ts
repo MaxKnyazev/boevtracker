@@ -164,6 +164,46 @@ export type NotificationSubscription = {
   } | null;
 };
 
+export type WorkShiftStatus = 'active' | 'paused' | 'completed';
+
+export type WorkShift = {
+  id: number;
+  userId: number;
+  user?: PublicUser | null;
+  startedAt: string;
+  endedAt?: string | null;
+  comment?: string | null;
+  status: WorkShiftStatus;
+  pausedAt?: string | null;
+  pauseElapsedSeconds: number;
+  totalPauseSeconds: number;
+};
+
+export type ShiftStatsStatusSlice = {
+  statusName: string;
+  seconds: number;
+  user?: PublicUser | null;
+};
+
+export type ShiftStatsTask = {
+  taskId: number;
+  title: string;
+  project?: {
+    id: number;
+    name: string;
+    boardId?: number;
+    board?: { id: number; name: string } | null;
+  } | null;
+  totalSeconds: number;
+  statuses: ShiftStatsStatusSlice[];
+};
+
+export type ShiftStats = {
+  shift: WorkShift;
+  totalSeconds: number;
+  tasks: ShiftStatsTask[];
+};
+
 export type Project = {
   id: number;
   name: string;
@@ -418,6 +458,21 @@ export const api = {
   deleteProfileAvatar: () =>
     request<{ user: User }>('/api/profile/avatar', { method: 'DELETE' }),
 
+  shifts: () => request<{ shifts: WorkShift[] }>('/api/shifts'),
+  shiftStats: (id: number) => request<ShiftStats>(`/api/shifts/${id}/stats`),
+  currentShift: () => request<{ shift: WorkShift | null }>('/api/shifts/current'),
+  startShift: () =>
+    request<{ shift: WorkShift }>('/api/shifts/start', { method: 'POST' }),
+  pauseShift: () =>
+    request<{ shift: WorkShift }>('/api/shifts/pause', { method: 'POST' }),
+  resumeShift: () =>
+    request<{ shift: WorkShift }>('/api/shifts/resume', { method: 'POST' }),
+  endShift: (body: { endedAt: string; comment?: string }) =>
+    request<{ shift: WorkShift }>('/api/shifts/end', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   users: () => request<{ users: User[] }>('/api/users'),
   assignableUsers: () => request<{ users: User[] }>('/api/users/assignable'),
   approveUser: (id: number, role: Role) =>
@@ -664,6 +719,8 @@ export const api = {
       afterNotificationId?: number;
       taskId?: number | null;
       taskVersion?: string;
+      watchShifts?: boolean;
+      shiftsVersion?: string;
     },
     signal?: AbortSignal,
   ) => {
@@ -677,12 +734,20 @@ export const api = {
     if (params.taskVersion) {
       q.set('taskVersion', params.taskVersion);
     }
+    if (params.watchShifts) {
+      q.set('watchShifts', '1');
+    }
+    if (params.shiftsVersion) {
+      q.set('shiftsVersion', params.shiftsVersion);
+    }
     return request<{
       notifications: AppNotification[];
       unreadCount: number;
       afterNotificationId: number;
       task: Task | null;
       taskVersion: string | null;
+      shiftsVersion: string | null;
+      shiftsChanged: boolean;
     }>(`/api/realtime/poll?${q.toString()}`, { signal });
   },
 };

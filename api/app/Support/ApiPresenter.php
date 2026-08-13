@@ -13,6 +13,7 @@ use App\Models\Task;
 use App\Models\TaskStatusHistory;
 use App\Models\User;
 use App\Models\UserNotificationSettings;
+use App\Models\WorkShift;
 use Illuminate\Support\Carbon;
 
 class ApiPresenter
@@ -373,6 +374,46 @@ class ApiPresenter
         }
 
         return $data;
+    }
+
+    public static function workShift(WorkShift $shift): array
+    {
+        $openPause = $shift->openPause();
+        $completedPauseSeconds = 0;
+
+        foreach ($shift->relationLoaded('pauses') ? $shift->pauses : $shift->pauses()->get() as $pause) {
+            if ($pause->ended_at) {
+                $completedPauseSeconds += max(
+                    0,
+                    $pause->ended_at->getTimestamp() - $pause->started_at->getTimestamp()
+                );
+            }
+        }
+
+        $currentPauseSeconds = 0;
+        if ($openPause) {
+            $currentPauseSeconds = max(
+                0,
+                now()->getTimestamp() - $openPause->started_at->getTimestamp()
+            );
+        }
+
+        return [
+            'id' => $shift->id,
+            'userId' => $shift->user_id,
+            'user' => $shift->relationLoaded('user')
+                ? self::publicUser($shift->user)
+                : null,
+            'startedAt' => self::date($shift->started_at),
+            'endedAt' => self::date($shift->ended_at),
+            'comment' => $shift->comment,
+            'status' => $shift->ended_at
+                ? 'completed'
+                : ($openPause ? 'paused' : 'active'),
+            'pausedAt' => $openPause ? self::date($openPause->started_at) : null,
+            'pauseElapsedSeconds' => $currentPauseSeconds,
+            'totalPauseSeconds' => $completedPauseSeconds + $currentPauseSeconds,
+        ];
     }
 
     private static function date(mixed $value): ?string

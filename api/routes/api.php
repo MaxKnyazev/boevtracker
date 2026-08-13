@@ -7,6 +7,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\RealtimeController;
+use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\StatusController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\UserController;
@@ -43,6 +44,14 @@ Route::middleware(AuthenticateJwt::class)->group(function () {
     Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar']);
     Route::delete('/profile/avatar', [ProfileController::class, 'deleteAvatar']);
     Route::get('/profile/avatar-source', [ProfileController::class, 'showAvatarSource']);
+
+    Route::get('/shifts', [ShiftController::class, 'index']);
+    Route::get('/shifts/current', [ShiftController::class, 'current']);
+    Route::get('/shifts/{id}/stats', [ShiftController::class, 'stats'])->whereNumber('id');
+    Route::post('/shifts/start', [ShiftController::class, 'start']);
+    Route::post('/shifts/pause', [ShiftController::class, 'pause']);
+    Route::post('/shifts/resume', [ShiftController::class, 'resume']);
+    Route::post('/shifts/end', [ShiftController::class, 'end']);
 
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/users/assignable', [UserController::class, 'assignable']);

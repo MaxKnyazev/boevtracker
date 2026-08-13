@@ -7,13 +7,16 @@ import {
   FolderKanban,
   ListTodo,
   Bell,
+  Clock,
   PanelLeftClose,
   PanelLeft,
 } from 'lucide-react';
 import { useAuthStore, canManageUsers } from '@/store/auth';
 import { useNotificationsStore } from '@/store/notifications';
+import { useShiftStore } from '@/store/shifts';
 import { NotificationWatcher } from '@/components/notification-watcher';
 import { UploadProgressDock } from '@/components/upload-progress-dock';
+import { ShiftControls } from '@/components/shift-controls';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ROLE_LABELS, cn } from '@/lib/utils';
@@ -23,6 +26,7 @@ const SIDEBAR_COLLAPSED_KEY = 'boevtracker.sidebarCollapsed';
 
 export function AppLayout() {
   const { user, logout } = useAuthStore();
+  const clearShift = useShiftStore((s) => s.clear);
   const unreadCount = useNotificationsStore((s) => s.unreadCount);
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(() => {
@@ -42,6 +46,7 @@ export function AppLayout() {
   }, [collapsed]);
 
   const onLogout = async () => {
+    clearShift();
     await logout();
     navigate('/login');
   };
@@ -114,6 +119,10 @@ export function AppLayout() {
             <ListTodo className="h-4 w-4 shrink-0" />
             {!collapsed && 'Задачи'}
           </NavLink>
+          <NavLink to="/time" className={linkClass} title="Учет времени">
+            <Clock className="h-4 w-4 shrink-0" />
+            {!collapsed && 'Учет времени'}
+          </NavLink>
           <NavLink to="/notifications" className={linkClass} title="Уведомления">
             <span className="relative shrink-0">
               <Bell className="h-4 w-4" />
@@ -138,60 +147,58 @@ export function AppLayout() {
           )}
         </nav>
 
-        <div
-          className={cn(
-            'mt-auto border-t border-border pt-4',
-            collapsed ? 'px-0' : 'px-2',
-          )}
-        >
-          {collapsed ? (
-            <div className="flex flex-col items-center gap-2">
-              <button
-                type="button"
-                className="rounded-full outline-none ring-ring transition hover:opacity-90 focus-visible:ring-2"
-                title={displayName(user)}
-                onClick={() => navigate('/profile')}
-              >
-                <UserAvatar user={user} size="md" />
-              </button>
-              <ThemeToggle />
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-9 w-9"
-                onClick={onLogout}
-                title="Выйти"
-              >
-                <LogOut className="h-4 w-4" />
-              </Button>
-            </div>
-          ) : (
-            <>
-              <div className="mb-3 flex items-center gap-2">
+        <div className={cn('mt-auto', collapsed ? 'px-0' : 'px-2')}>
+          <ShiftControls collapsed={collapsed} />
+          <div className="border-t border-border pt-4">
+            {collapsed ? (
+              <div className="flex flex-col items-center gap-2">
                 <button
                   type="button"
-                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg p-1 text-left outline-none transition hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring"
+                  className="rounded-full outline-none ring-ring transition hover:opacity-90 focus-visible:ring-2"
+                  title={displayName(user)}
                   onClick={() => navigate('/profile')}
-                  title="Личный кабинет"
                 >
                   <UserAvatar user={user} size="md" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">
-                      {displayName(user)}
-                    </div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      {user ? ROLE_LABELS[user.role] : ''}
-                    </div>
-                  </div>
                 </button>
                 <ThemeToggle />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9"
+                  onClick={onLogout}
+                  title="Выйти"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
               </div>
-              <Button variant="outline" className="w-full" onClick={onLogout}>
-                <LogOut className="h-4 w-4" />
-                Выйти
-              </Button>
-            </>
-          )}
+            ) : (
+              <>
+                <div className="mb-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg p-1 text-left outline-none transition hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => navigate('/profile')}
+                    title="Личный кабинет"
+                  >
+                    <UserAvatar user={user} size="md" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">
+                        {displayName(user)}
+                      </div>
+                      <div className="truncate text-xs text-muted-foreground">
+                        {user ? ROLE_LABELS[user.role] : ''}
+                      </div>
+                    </div>
+                  </button>
+                  <ThemeToggle />
+                </div>
+                <Button variant="outline" className="w-full" onClick={onLogout}>
+                  <LogOut className="h-4 w-4" />
+                  Выйти
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </aside>
 

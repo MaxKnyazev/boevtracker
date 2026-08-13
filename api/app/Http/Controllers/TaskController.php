@@ -12,6 +12,7 @@ use App\Models\TaskStatusHistory;
 use App\Models\User;
 use App\Services\FileStorage;
 use App\Services\NotificationService;
+use App\Services\TaskWorkIntervalService;
 use App\Support\ApiPresenter;
 use App\Support\Broadcasting;
 use App\Support\Constants;
@@ -26,6 +27,7 @@ class TaskController extends Controller
     public function __construct(
         private FileStorage $files,
         private NotificationService $notifications,
+        private TaskWorkIntervalService $workIntervals,
     ) {}
 
     private function broadcastTaskUpdated(int $taskId): void
@@ -326,6 +328,17 @@ class TaskController extends Controller
         }
 
         $this->recordStatusChange($task, $user, null, (int) $statusId);
+
+        $toStatus = $project->statuses->firstWhere('id', (int) $statusId)
+            ?? ProjectStatus::query()->find((int) $statusId);
+        if ($toStatus) {
+            $this->workIntervals->onStatusChange(
+                $task,
+                $toStatus,
+                $this->workIntervals->resolveWorkerUserId($task, $activeId),
+            );
+        }
+
         $task->loadMissing('project');
         $this->notifications->notifyTaskCreated($user, $task);
 
@@ -379,6 +392,10 @@ class TaskController extends Controller
         if (! $task) {
             return response()->json(['error' => 'Задача не найдена'], 404);
         }
+
+        $prevActiveId = $task->active_assignee_id !== null
+            ? (int) $task->active_assignee_id
+            : null;
 
         $data = $validator->validated();
         $update = [];
@@ -493,8 +510,33 @@ class TaskController extends Controller
             $task->update($update);
         }
 
+        $task->refresh();
+        $task->load(['assignees', 'status', 'project.statuses']);
+
         if ($statusChanging) {
             $this->recordStatusChange($task, $user, $fromStatusId, $toStatusId);
+            $toStatus = $task->status
+                ?? ProjectStatus::query()->find($toStatusId);
+            if ($toStatus) {
+                $worker = $this->workIntervals->resolveWorkerUserId(
+                    $task,
+                    array_key_exists('active_assignee_id', $update)
+                        ? ($update['active_assignee_id'] !== null ? (int) $update['active_assignee_id'] : null)
+                        : $activeForStatus,
+                );
+                $this->workIntervals->onStatusChange($task, $toStatus, $worker);
+            }
+        } else {
+            $nextActiveId = $task->active_assignee_id !== null
+                ? (int) $task->active_assignee_id
+                : null;
+            if ($prevActiveId !== $nextActiveId) {
+                $this->workIntervals->onActiveAssigneeChange(
+                    $task,
+                    $prevActiveId,
+                    $nextActiveId,
+                );
+            }
         }
 
         $task->load($this->taskRelations());
@@ -513,10 +555,14 @@ class TaskController extends Controller
             return $resp;
         }
 
-        $task = Task::query()->with('assignees')->find($id);
+        $task = Task::query()->with(['assignees', 'status', 'project.statuses'])->find($id);
         if (! $task) {
             return response()->json(['error' => 'Задача не найдена'], 404);
         }
+
+        $prevActiveId = $task->active_assignee_id !== null
+            ? (int) $task->active_assignee_id
+            : null;
 
         $ids = $task->assigneeIds();
         $already = in_array((int) $user->id, $ids, true);
@@ -533,6 +579,18 @@ class TaskController extends Controller
 
         if (count($ids) > 1) {
             $needsActiveChoice = true;
+        }
+
+        $nextActiveId = $task->active_assignee_id !== null
+            ? (int) $task->active_assignee_id
+            : null;
+        if ($prevActiveId !== $nextActiveId) {
+            $task->load(['assignees', 'status', 'project.statuses']);
+            $this->workIntervals->onActiveAssigneeChange(
+                $task,
+                $prevActiveId,
+                $nextActiveId,
+            );
         }
 
         $task->load($this->taskRelations());
@@ -639,6 +697,15 @@ class TaskController extends Controller
         });
 
         $task = Task::query()->with($this->taskRelations())->find($id);
+        if ($statusChanged && $task) {
+            $task->loadMissing(['assignees', 'status', 'project.statuses']);
+            $worker = $this->workIntervals->resolveWorkerUserId(
+                $task,
+                $activeForStatus,
+            );
+            $this->workIntervals->onStatusChange($task, $status, $worker);
+        }
+
         $this->broadcastTaskUpdated((int) $id);
 
         return response()->json(['task' => ApiPresenter::task($task, true)]);
@@ -699,6 +766,12 @@ class TaskController extends Controller
 
         if ($toStatusId !== $fromStatusId) {
             $this->recordStatusChange($task, $user, $fromStatusId, $toStatusId);
+            $task->load(['assignees', 'status', 'project.statuses']);
+            $toStatus = $task->status ?? ProjectStatus::query()->find($toStatusId);
+            if ($toStatus) {
+                $worker = $this->workIntervals->resolveWorkerUserId($task);
+                $this->workIntervals->onStatusChange($task, $toStatus, $worker);
+            }
         }
 
         $task->load($this->taskRelations());
