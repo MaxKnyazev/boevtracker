@@ -155,7 +155,9 @@ class ShiftController extends Controller
         }
 
         $data = $validator->validated();
-        $endedAt = Carbon::parse($data['endedAt']);
+        // Client sends UTC ISO; store wall-clock in app timezone (Europe/Moscow).
+        $endedAt = Carbon::parse($data['endedAt'])
+            ->timezone(config('app.timezone') ?: 'Europe/Moscow');
         $now = now();
 
         if ($endedAt->lt($shift->started_at)) {
