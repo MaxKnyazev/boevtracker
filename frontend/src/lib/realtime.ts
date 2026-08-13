@@ -17,6 +17,7 @@ type NotificationsHandler = (
   unreadCount: number,
   afterNotificationId: number,
 ) => void;
+type ShiftsHandler = () => void;
 
 type WatchState = {
   taskId: number | null;
@@ -40,11 +41,15 @@ class RealtimeClient {
     taskVersion: '',
     onTask: null,
   };
+  private watchShifts = false;
+  private shiftsVersion = '';
+  private onShifts: ShiftsHandler | null = null;
 
   private driver: 'pusher' | 'poll' | null = null;
   private echo: Echo<'pusher'> | null = null;
   private userChannel: ReturnType<Echo<'pusher'>['private']> | null = null;
   private taskChannel: ReturnType<Echo<'pusher'>['private']> | null = null;
+  private shiftsChannel: ReturnType<Echo<'pusher'>['private']> | null = null;
 
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private pollAbort: AbortController | null = null;
@@ -90,6 +95,7 @@ class RealtimeClient {
     this.primed = false;
     this.stopPolling();
     this.unsubscribeTaskChannel();
+    this.unsubscribeShiftsChannel();
     this.unsubscribeUserChannel();
     if (this.echo) {
       try {
@@ -102,6 +108,9 @@ class RealtimeClient {
     }
     this.driver = null;
     this.watch = { taskId: null, taskVersion: '', onTask: null };
+    this.watchShifts = false;
+    this.shiftsVersion = '';
+    this.onShifts = null;
   }
 
   watchTask(taskId: number, onTask: TaskHandler) {
@@ -117,6 +126,27 @@ class RealtimeClient {
     if (taskId != null && this.watch.taskId !== taskId) return;
     this.unsubscribeTaskChannel();
     this.watch = { taskId: null, taskVersion: '', onTask: null };
+    if (this.driver === 'poll') {
+      this.kickPoll();
+    }
+  }
+
+  watchShiftsList(onShifts: ShiftsHandler) {
+    this.watchShifts = true;
+    this.onShifts = onShifts;
+    this.shiftsVersion = '';
+    if (this.driver === 'pusher') {
+      this.subscribeShiftsChannel();
+    } else if (this.driver === 'poll') {
+      this.kickPoll();
+    }
+  }
+
+  unwatchShiftsList() {
+    this.unsubscribeShiftsChannel();
+    this.watchShifts = false;
+    this.shiftsVersion = '';
+    this.onShifts = null;
     if (this.driver === 'poll') {
       this.kickPoll();
     }
@@ -186,6 +216,9 @@ class RealtimeClient {
     if (this.watch.taskId != null) {
       this.subscribeTaskChannel(this.watch.taskId);
     }
+    if (this.watchShifts) {
+      this.subscribeShiftsChannel();
+    }
   }
 
   private subscribeTaskChannel(taskId: number) {
@@ -206,6 +239,26 @@ class RealtimeClient {
       }
     }
     this.taskChannel = null;
+  }
+
+  private subscribeShiftsChannel() {
+    if (!this.echo) return;
+    this.unsubscribeShiftsChannel();
+    this.shiftsChannel = this.echo.private('shifts');
+    this.shiftsChannel.listen('.shift.updated', () => {
+      this.onShifts?.();
+    });
+  }
+
+  private unsubscribeShiftsChannel() {
+    if (this.echo && this.shiftsChannel) {
+      try {
+        this.echo.leave('shifts');
+      } catch {
+        // ignore
+      }
+    }
+    this.shiftsChannel = null;
   }
 
   private unsubscribeUserChannel() {
@@ -303,6 +356,10 @@ class RealtimeClient {
           afterNotificationId: this.afterNotificationId,
           taskId: this.watch.taskId,
           taskVersion: this.watch.taskVersion || undefined,
+          watchShifts: this.watchShifts || undefined,
+          shiftsVersion: this.watchShifts
+            ? this.shiftsVersion || undefined
+            : undefined,
         },
         controller.signal,
       );
@@ -332,6 +389,14 @@ class RealtimeClient {
       }
       if (data.taskVersion && this.watch.taskId) {
         this.watch.taskVersion = data.taskVersion;
+      }
+
+      if (this.watchShifts && data.shiftsVersion) {
+        const hadVersion = this.shiftsVersion !== '';
+        this.shiftsVersion = data.shiftsVersion;
+        if (hadVersion && data.shiftsChanged) {
+          this.onShifts?.();
+        }
       }
     } catch (err) {
       const aborted =

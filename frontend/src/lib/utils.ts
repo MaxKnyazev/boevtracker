@@ -25,6 +25,37 @@ export function formatDate(value?: string | Date | null): string {
   });
 }
 
+export function formatDateTime(value?: string | Date | null): string {
+  if (!value) return '—';
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** Human-readable duration from total seconds (e.g. "1 ч 5 мин"). */
+export function formatSeconds(
+  totalSeconds: number,
+  options?: { withSeconds?: boolean },
+): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (options?.withSeconds) {
+    if (h > 0) return `${h} ч ${m} мин ${sec} сек`;
+    if (m > 0) return `${m} мин ${sec} сек`;
+    return `${sec} сек`;
+  }
+  if (h > 0) return `${h} ч ${m} мин`;
+  return `${m} мин`;
+}
+
 export const PRIORITY_LABELS: Record<string, string> = {
   LOW: 'Низкий',
   MEDIUM: 'Средний',

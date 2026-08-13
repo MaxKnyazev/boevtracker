@@ -69,6 +69,11 @@ class Task extends Model
         return $this->hasMany(TaskStatusHistory::class)->orderByDesc('created_at');
     }
 
+    public function workIntervals(): HasMany
+    {
+        return $this->hasMany(TaskWorkInterval::class);
+    }
+
     public function assigneeIds(): array
     {
         if ($this->relationLoaded('assignees')) {

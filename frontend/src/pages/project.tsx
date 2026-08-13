@@ -8,7 +8,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, GripVertical, Lock, Plus, Settings2, UploadCloud } from 'lucide-react';
 import {
   DndContext,
@@ -202,6 +202,7 @@ export function ProjectPage({
   onTasksChanged?: (projectId: number, counts: TaskBucketCounts) => void;
 } = {}) {
   const params = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const projectId = String(projectIdProp ?? params.projectId);
   const user = useAuthStore((s) => s.user);
   const writable = canWrite(user?.role);
@@ -283,6 +284,17 @@ export function ProjectPage({
   useEffect(() => {
     void load();
   }, [projectId]);
+
+  useEffect(() => {
+    const raw = searchParams.get('task');
+    if (!raw) return;
+    const taskId = Number(raw);
+    if (!Number.isFinite(taskId) || taskId <= 0) return;
+    setSelectedTaskId(taskId);
+    const next = new URLSearchParams(searchParams);
+    next.delete('task');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     setShowAllClosed(false);

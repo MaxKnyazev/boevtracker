@@ -6,6 +6,8 @@ use App\Models\Attachment;
 use App\Models\Comment;
 use App\Models\Notification;
 use App\Models\Task;
+use App\Models\WorkShift;
+use App\Models\WorkShiftPause;
 use App\Support\ApiPresenter;
 use App\Support\Broadcasting;
 use Illuminate\Http\JsonResponse;
@@ -55,6 +57,8 @@ class RealtimeController extends Controller
             ? (int) $taskId
             : null;
         $clientTaskVersion = (string) $request->query('taskVersion', '');
+        $watchShifts = filter_var($request->query('watchShifts', false), FILTER_VALIDATE_BOOLEAN);
+        $clientShiftsVersion = (string) $request->query('shiftsVersion', '');
 
         $notifications = Notification::query()
             ->with(['actor', 'task'])
@@ -67,6 +71,10 @@ class RealtimeController extends Controller
         $taskVersion = $taskId ? $this->taskVersion($taskId) : null;
         $taskChanged = $taskId !== null
             && ($clientTaskVersion === '' || $taskVersion !== $clientTaskVersion);
+
+        $shiftsVersion = $watchShifts ? $this->shiftsVersion() : null;
+        $shiftsChanged = $watchShifts
+            && ($clientShiftsVersion === '' || $shiftsVersion !== $clientShiftsVersion);
 
         $maxNotificationId = $afterNotificationId;
         foreach ($notifications as $n) {
@@ -111,6 +119,32 @@ class RealtimeController extends Controller
             'afterNotificationId' => $maxNotificationId,
             'task' => $taskPayload,
             'taskVersion' => $taskVersion,
+            'shiftsVersion' => $shiftsVersion,
+            'shiftsChanged' => $shiftsChanged,
+        ]);
+    }
+
+    private function shiftsVersion(): string
+    {
+        $shiftStats = WorkShift::query()
+            ->selectRaw('COUNT(*) as cnt')
+            ->selectRaw('COALESCE(MAX(id), 0) as max_id')
+            ->selectRaw('MAX(updated_at) as latest')
+            ->first();
+
+        $pauseStats = WorkShiftPause::query()
+            ->selectRaw('COUNT(*) as cnt')
+            ->selectRaw('COALESCE(MAX(id), 0) as max_id')
+            ->selectRaw('MAX(COALESCE(ended_at, started_at)) as latest')
+            ->first();
+
+        return implode(':', [
+            (int) ($shiftStats->cnt ?? 0),
+            (int) ($shiftStats->max_id ?? 0),
+            (string) ($shiftStats->latest ?? '0'),
+            (int) ($pauseStats->cnt ?? 0),
+            (int) ($pauseStats->max_id ?? 0),
+            (string) ($pauseStats->latest ?? '0'),
         ]);
     }
 

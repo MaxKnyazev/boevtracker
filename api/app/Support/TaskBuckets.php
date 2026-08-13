@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Project;
+use App\Models\ProjectStatus;
 use App\Models\Task;
 use Illuminate\Support\Collection;
 
@@ -71,6 +72,24 @@ class TaskBuckets
         }
 
         return $result;
+    }
+
+    /**
+     * Status is "in progress" when its order is strictly between Открыта and Закрыта.
+     *
+     * @param  Collection<int, ProjectStatus>|iterable<ProjectStatus>  $projectStatuses
+     */
+    public static function isInProgressStatus(ProjectStatus $status, iterable $projectStatuses): bool
+    {
+        $statuses = collect($projectStatuses);
+        $open = $statuses->firstWhere('name', Constants::OPEN_STATUS_NAME);
+        $closed = $statuses->firstWhere('name', Constants::CLOSED_STATUS_NAME);
+        if (! $open || ! $closed) {
+            return false;
+        }
+
+        return (int) $status->order > (int) $open->order
+            && (int) $status->order < (int) $closed->order;
     }
 
     /**

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowDown, ArrowUp, ArrowUpDown, ListTodo } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, ListTodo } from 'lucide-react';
 import { api, taskActiveAssignee, type Project, type Task, type User } from '@/lib/api';
 import { canWrite, useAuthStore } from '@/store/auth';
 import { EmptyState, PageHeader } from '@/components/layout';
 import { TaskViewControls } from '@/components/task-view-controls';
 import { TaskModal } from '@/components/task-modal';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { displayName } from '@/components/user-avatar';
 import {
   DEFAULT_TASK_VIEW,
@@ -27,6 +28,7 @@ const priorityColor: Record<string, string> = {
 };
 
 export function TasksPage() {
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const writable = canWrite(user?.role);
 
@@ -189,6 +191,7 @@ export function TasksPage() {
           <table className="w-full min-w-[960px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/30 text-left text-xs text-muted-foreground">
+                <th className="w-10 px-2 py-2.5" aria-label="Открыть в проекте" />
                 <SortableTh
                   label="Задача"
                   field="title"
@@ -252,6 +255,32 @@ export function TasksPage() {
                   className="cursor-pointer border-b border-border/70 transition-colors hover:bg-accent/40"
                   onClick={() => void openTask(task)}
                 >
+                  <td className="px-2 py-2.5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground"
+                      title="Открыть задачу в проекте"
+                      disabled={!task.project?.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const projectId = task.project?.id;
+                        if (!projectId) return;
+                        const boardId =
+                          task.project?.boardId ?? task.project?.board?.id;
+                        if (boardId) {
+                          navigate(
+                            `/boards/${boardId}?tab=${projectId}&task=${task.id}`,
+                          );
+                        } else {
+                          navigate(`/projects/${projectId}?task=${task.id}`);
+                        }
+                      }}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </Button>
+                  </td>
                   <td className="max-w-[280px] px-3 py-2.5">
                     <div className="truncate font-medium" title={task.title}>
                       {task.title}
