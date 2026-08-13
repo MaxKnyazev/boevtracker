@@ -421,10 +421,14 @@ class ApiPresenter
         if ($value === null) {
             return null;
         }
-        if ($value instanceof Carbon) {
-            return $value->toISOString();
-        }
 
-        return Carbon::parse($value)->toISOString();
+        // Shared hosting often stores Moscow wall-clock values. If Laravel treats them as UTC
+        // and we emit "...Z", the browser applies +3 again (16:53 → 19:53). Reinterpret the
+        // wall clock in the app timezone, then serialize a real UTC instant.
+        $carbon = $value instanceof Carbon ? $value->copy() : Carbon::parse($value);
+        $wall = $carbon->format('Y-m-d H:i:s.u');
+        $tz = config('app.timezone') ?: 'Europe/Moscow';
+
+        return Carbon::createFromFormat('Y-m-d H:i:s.u', $wall, $tz)->toISOString();
     }
 }

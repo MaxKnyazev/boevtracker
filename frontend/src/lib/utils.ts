@@ -16,9 +16,13 @@ export function formatDuration(from: string | Date): string {
   return `${days} д ${hours % 24} ч`;
 }
 
+/** Business timezone for shift / tracking UI (matches API APP_TIMEZONE). */
+export const APP_DISPLAY_TIMEZONE = 'Europe/Moscow';
+
 export function formatDate(value?: string | Date | null): string {
   if (!value) return '—';
   return new Date(value).toLocaleDateString('ru-RU', {
+    timeZone: APP_DISPLAY_TIMEZONE,
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -30,9 +34,21 @@ export function formatDateTime(value?: string | Date | null): string {
   const d = typeof value === 'string' ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleString('ru-RU', {
+    timeZone: APP_DISPLAY_TIMEZONE,
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+export function formatTime(value?: string | Date | null): string {
+  if (!value) return '—';
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('ru-RU', {
+    timeZone: APP_DISPLAY_TIMEZONE,
     hour: '2-digit',
     minute: '2-digit',
   });

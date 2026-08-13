@@ -10,19 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Label, Textarea } from '@/components/ui/input';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 import type { WorkShift } from '@/lib/api';
-import { formatSeconds } from '@/lib/utils';
-
-function formatDisplay(iso: string | Date): string {
-  const d = typeof iso === 'string' ? new Date(iso) : iso;
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+import { formatDateTime, formatSeconds } from '@/lib/utils';
 
 export function EndShiftDialog({
   open,
@@ -152,7 +140,7 @@ export function EndShiftDialog({
             <div>
               <Label>Начало смены</Label>
               <div className="mt-1.5 text-sm text-muted-foreground">
-                {formatDisplay(shift.startedAt)}
+                {formatDateTime(shift.startedAt)}
               </div>
             </div>
 
@@ -183,7 +171,7 @@ export function EndShiftDialog({
 
               <p className="text-xs text-muted-foreground">
                 Не раньше начала смены
-                {anchorAt ? ` и не позже ${formatDisplay(anchorAt)}` : ''}.
+                {anchorAt ? ` и не позже ${formatDateTime(anchorAt)}` : ''}.
               </p>
             </div>
 

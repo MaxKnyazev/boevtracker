@@ -3,7 +3,7 @@ import { Coffee, Play, Square, Timer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EndShiftDialog } from '@/components/end-shift-dialog';
 import { useShiftStore } from '@/store/shifts';
-import { cn } from '@/lib/utils';
+import { cn, formatTime } from '@/lib/utils';
 
 function formatDuration(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));
@@ -102,11 +102,7 @@ export function ShiftControls({ collapsed }: { collapsed: boolean }) {
             <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
               <Timer className="h-3.5 w-3.5" />
               <span>
-                Смена с{' '}
-                {new Date(shift.startedAt).toLocaleTimeString('ru-RU', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+                Смена с {formatTime(shift.startedAt)}
               </span>
             </div>
           )}
