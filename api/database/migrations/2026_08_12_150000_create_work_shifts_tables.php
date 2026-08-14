@@ -11,8 +11,8 @@ return new class extends Migration
         Schema::create('work_shifts', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
-            $table->timestamp('started_at');
-            $table->timestamp('ended_at')->nullable();
+            $table->dateTime('started_at');
+            $table->dateTime('ended_at')->nullable();
             $table->text('comment')->nullable();
             $table->timestamps();
 
@@ -22,9 +22,9 @@ return new class extends Migration
         Schema::create('work_shift_pauses', function (Blueprint $table) {
             $table->id();
             $table->foreignId('work_shift_id')->constrained('work_shifts')->cascadeOnDelete();
-            $table->timestamp('started_at');
-            $table->timestamp('ended_at')->nullable();
-            $table->timestamp('created_at')->useCurrent();
+            $table->dateTime('started_at');
+            $table->dateTime('ended_at')->nullable();
+            $table->dateTime('created_at')->useCurrent();
 
             $table->index(['work_shift_id', 'ended_at']);
         });

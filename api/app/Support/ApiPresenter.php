@@ -14,7 +14,6 @@ use App\Models\TaskStatusHistory;
 use App\Models\User;
 use App\Models\UserNotificationSettings;
 use App\Models\WorkShift;
-use Illuminate\Support\Carbon;
 
 class ApiPresenter
 {
@@ -398,14 +397,21 @@ class ApiPresenter
             );
         }
 
+        // Prefer repaired window for completed shifts so UI matches stats.
+        $startedAt = $shift->started_at;
+        $endedAt = $shift->ended_at;
+        if ($endedAt) {
+            [$startedAt, $endedAt] = AppDateTime::shiftWindow($shift);
+        }
+
         return [
             'id' => $shift->id,
             'userId' => $shift->user_id,
             'user' => $shift->relationLoaded('user')
                 ? self::publicUser($shift->user)
                 : null,
-            'startedAt' => self::date($shift->started_at),
-            'endedAt' => self::date($shift->ended_at),
+            'startedAt' => self::date($startedAt),
+            'endedAt' => self::date($endedAt),
             'comment' => $shift->comment,
             'status' => $shift->ended_at
                 ? 'completed'
@@ -418,16 +424,6 @@ class ApiPresenter
 
     private static function date(mixed $value): ?string
     {
-        if ($value === null) {
-            return null;
-        }
-
-        $carbon = $value instanceof Carbon ? $value->copy() : Carbon::parse($value);
-
-        // Keep an unambiguous offset (Moscow) so the client never treats a local
-        // wall-clock as Zulu and applies +3 again.
-        return $carbon
-            ->timezone(config('app.timezone') ?: 'Europe/Moscow')
-            ->toIso8601String();
+        return AppDateTime::toApi($value);
     }
 }

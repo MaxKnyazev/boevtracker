@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\TaskWorkInterval;
 use App\Models\WorkShift;
 use App\Support\ApiPresenter;
+use App\Support\AppDateTime;
 use Illuminate\Support\Carbon;
 
 class ShiftStatsService
@@ -26,18 +27,26 @@ class ShiftStatsService
     {
         $shift->loadMissing(['user', 'pauses']);
 
-        $shiftStart = $shift->started_at->copy();
-        $shiftEnd = $shift->ended_at?->copy() ?? now();
-        if ($shiftEnd->lt($shiftStart)) {
-            $shiftEnd = $shiftStart->copy();
-        }
+        [$shiftStart, $shiftEnd] = AppDateTime::shiftWindow($shift);
+        $startDb = AppDateTime::toDb($shiftStart);
+        $endDb = AppDateTime::toDb($shiftEnd);
 
         $pauseRanges = [];
         foreach ($shift->pauses as $pause) {
-            $pStart = $pause->started_at;
-            $pEnd = $pause->ended_at ?? $shiftEnd;
+            $pStart = $pause->started_at->copy()->timezone(AppDateTime::timezone());
+            $pEnd = ($pause->ended_at ?? $shiftEnd)->copy()->timezone(AppDateTime::timezone());
             if ($pEnd->lt($pStart)) {
                 $pEnd = $pStart->copy();
+            }
+            // Clip pauses to the shift window.
+            if ($pEnd->lte($shiftStart) || $pStart->gte($shiftEnd)) {
+                continue;
+            }
+            if ($pStart->lt($shiftStart)) {
+                $pStart = $shiftStart->copy();
+            }
+            if ($pEnd->gt($shiftEnd)) {
+                $pEnd = $shiftEnd->copy();
             }
             $pauseRanges[] = [$pStart, $pEnd];
         }
@@ -45,10 +54,10 @@ class ShiftStatsService
         $ownerIntervals = TaskWorkInterval::query()
             ->with(['task.project.board', 'user'])
             ->where('user_id', $shift->user_id)
-            ->where('started_at', '<', $shiftEnd)
-            ->where(function ($q) use ($shiftStart) {
+            ->where('started_at', '<', $endDb)
+            ->where(function ($q) use ($startDb) {
                 $q->whereNull('ended_at')
-                    ->orWhere('ended_at', '>', $shiftStart);
+                    ->orWhere('ended_at', '>', $startDb);
             })
             ->orderBy('started_at')
             ->get();
@@ -92,10 +101,10 @@ class ShiftStatsService
                 ->with(['task.project.board', 'user'])
                 ->whereIn('task_id', $taskIds)
                 ->where('user_id', '!=', $shift->user_id)
-                ->where('started_at', '<', $shiftEnd)
-                ->where(function ($q) use ($shiftStart) {
+                ->where('started_at', '<', $endDb)
+                ->where(function ($q) use ($startDb) {
                     $q->whereNull('ended_at')
-                        ->orWhere('ended_at', '>', $shiftStart);
+                        ->orWhere('ended_at', '>', $startDb);
                 })
                 ->orderBy('started_at')
                 ->get();
@@ -107,7 +116,6 @@ class ShiftStatsService
                     continue;
                 }
 
-                // Peers are not paused by this shift — clip to window only.
                 $seconds = $this->workedSeconds($interval, $shiftStart, $shiftEnd, []);
                 if ($seconds <= 0) {
                     continue;
@@ -225,25 +233,28 @@ class ShiftStatsService
         Carbon $shiftEnd,
         array $pauseRanges,
     ): int {
-        $iStart = $interval->started_at->copy();
-        $iEnd = $interval->ended_at?->copy() ?? $shiftEnd->copy();
+        $tz = AppDateTime::timezone();
+        $iStart = $interval->started_at->copy()->timezone($tz);
+        $iEnd = $interval->ended_at
+            ? $interval->ended_at->copy()->timezone($tz)
+            : $shiftEnd->copy();
         if ($iEnd->lt($iStart)) {
             $iEnd = $iStart->copy();
         }
 
-        $clipStart = $iStart->gt($shiftStart) ? $iStart->copy() : $shiftStart->copy();
-        $clipEnd = $iEnd->lt($shiftEnd) ? $iEnd->copy() : $shiftEnd->copy();
-        if ($clipEnd->lte($clipStart)) {
+        $clipStartTs = max($iStart->getTimestamp(), $shiftStart->getTimestamp());
+        $clipEndTs = min($iEnd->getTimestamp(), $shiftEnd->getTimestamp());
+        if ($clipEndTs <= $clipStartTs) {
             return 0;
         }
 
-        $seconds = $clipEnd->getTimestamp() - $clipStart->getTimestamp();
+        $seconds = $clipEndTs - $clipStartTs;
 
         foreach ($pauseRanges as [$pStart, $pEnd]) {
-            $overlapStart = $pStart->gt($clipStart) ? $pStart : $clipStart;
-            $overlapEnd = $pEnd->lt($clipEnd) ? $pEnd : $clipEnd;
-            if ($overlapEnd->gt($overlapStart)) {
-                $seconds -= $overlapEnd->getTimestamp() - $overlapStart->getTimestamp();
+            $overlapStart = max($pStart->getTimestamp(), $clipStartTs);
+            $overlapEnd = min($pEnd->getTimestamp(), $clipEndTs);
+            if ($overlapEnd > $overlapStart) {
+                $seconds -= $overlapEnd - $overlapStart;
             }
         }
 

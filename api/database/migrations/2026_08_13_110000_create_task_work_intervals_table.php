@@ -15,8 +15,8 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
             $table->unsignedBigInteger('status_id')->nullable();
             $table->string('status_name', 128);
-            $table->timestamp('started_at');
-            $table->timestamp('ended_at')->nullable();
+            $table->dateTime('started_at');
+            $table->dateTime('ended_at')->nullable();
             $table->timestamps();
 
             $table->index(['user_id', 'started_at', 'ended_at']);

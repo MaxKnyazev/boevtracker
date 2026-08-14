@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ProjectStatus;
 use App\Models\Task;
 use App\Models\TaskWorkInterval;
+use App\Support\AppDateTime;
 use App\Support\TaskBuckets;
 use Illuminate\Support\Carbon;
 
@@ -16,7 +17,7 @@ class TaskWorkIntervalService
         ?int $workerUserId,
         ?Carbon $at = null,
     ): void {
-        $at ??= now();
+        $at ??= AppDateTime::now();
         $this->closeOpenIntervalsForTask((int) $task->id, $at);
 
         if ($workerUserId === null) {
@@ -37,7 +38,7 @@ class TaskWorkIntervalService
         ?int $nextUserId,
         ?Carbon $at = null,
     ): void {
-        $at ??= now();
+        $at ??= AppDateTime::now();
         if ((int) ($prevUserId ?? 0) === (int) ($nextUserId ?? 0)) {
             return;
         }
@@ -90,7 +91,7 @@ class TaskWorkIntervalService
 
     public function closeOpenIntervalsForTask(int $taskId, ?Carbon $at = null): void
     {
-        $at ??= now();
+        $at ??= AppDateTime::now();
         $open = TaskWorkInterval::query()
             ->where('task_id', $taskId)
             ->whereNull('ended_at')
@@ -100,7 +101,7 @@ class TaskWorkIntervalService
             $end = $interval->started_at && $interval->started_at->gt($at)
                 ? $interval->started_at
                 : $at;
-            $interval->update(['ended_at' => $end]);
+            $interval->update(['ended_at' => $end->copy()->timezone(AppDateTime::timezone())]);
         }
     }
 
@@ -123,7 +124,7 @@ class TaskWorkIntervalService
             'user_id' => $userId,
             'status_id' => $status->id,
             'status_name' => $status->name,
-            'started_at' => $at,
+            'started_at' => $at->copy()->timezone(AppDateTime::timezone()),
             'ended_at' => null,
         ]);
     }

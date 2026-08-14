@@ -7,10 +7,10 @@ use App\Models\WorkShift;
 use App\Models\WorkShiftPause;
 use App\Services\ShiftStatsService;
 use App\Support\ApiPresenter;
+use App\Support\AppDateTime;
 use App\Support\Broadcasting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
@@ -76,7 +76,7 @@ class ShiftController extends Controller
 
         $shift = WorkShift::query()->create([
             'user_id' => $user->id,
-            'started_at' => now(),
+            'started_at' => AppDateTime::now(),
         ]);
         $shift->load('pauses');
         $this->broadcastShiftUpdated($shift, 'start');
@@ -100,8 +100,8 @@ class ShiftController extends Controller
 
         WorkShiftPause::query()->create([
             'work_shift_id' => $shift->id,
-            'started_at' => now(),
-            'created_at' => now(),
+            'started_at' => AppDateTime::now(),
+            'created_at' => AppDateTime::now(),
         ]);
 
         $shift->touch();
@@ -127,7 +127,7 @@ class ShiftController extends Controller
             return response()->json(['error' => 'Смена не на паузе'], 409);
         }
 
-        $openPause->update(['ended_at' => now()]);
+        $openPause->update(['ended_at' => AppDateTime::now()]);
         $shift->touch();
         $shift->load('pauses');
         $this->broadcastShiftUpdated($shift, 'resume');
@@ -155,10 +155,9 @@ class ShiftController extends Controller
         }
 
         $data = $validator->validated();
-        // Client sends UTC ISO; store wall-clock in app timezone (Europe/Moscow).
-        $endedAt = Carbon::parse($data['endedAt'])
-            ->timezone(config('app.timezone') ?: 'Europe/Moscow');
-        $now = now();
+        // Client sends UTC ISO; normalize to APP_TIMEZONE wall clock before save.
+        $endedAt = AppDateTime::parseClient($data['endedAt']);
+        $now = AppDateTime::now();
 
         if ($endedAt->lt($shift->started_at)) {
             return response()->json(['error' => 'Время окончания не может быть раньше начала смены'], 400);
