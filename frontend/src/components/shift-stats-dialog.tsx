@@ -296,7 +296,7 @@ export function ShiftStatsDialog({
                   <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     По статусам
                   </div>
-                  <div className="h-28 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">
+                  <div className="h-36 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">
                     <ul className="space-y-1.5 text-sm">
                       {selectedTask.statuses.map((slice) => (
                         <li
@@ -309,8 +309,14 @@ export function ShiftStatsDialog({
                               size="sm"
                               title={displayName(slice.user)}
                             />
-                            <span className="truncate text-muted-foreground">
-                              {slice.statusName}
+                            <span className="min-w-0">
+                              <span className="block truncate text-muted-foreground">
+                                {slice.statusName}
+                              </span>
+                              <span className="block truncate text-[11px] text-muted-foreground/80">
+                                {displayName(slice.user)}
+                                {slice.isPeer ? ' · соавтор' : ''}
+                              </span>
                             </span>
                           </span>
                           <span className="shrink-0 tabular-nums font-medium">

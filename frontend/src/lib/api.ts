@@ -183,6 +183,8 @@ export type ShiftStatsStatusSlice = {
   statusName: string;
   seconds: number;
   user?: PublicUser | null;
+  /** Co-author time: shown in «По статусам», excluded from pie / task totals. */
+  isPeer?: boolean;
 };
 
 export type ShiftStatsTask = {

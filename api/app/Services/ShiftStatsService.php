@@ -19,7 +19,7 @@ class ShiftStatsService
      *     title: string,
      *     project: array{id: int, name: string, boardId?: int}|null,
      *     totalSeconds: int,
-     *     statuses: list<array{statusName: string, seconds: int, user: ?array}>
+     *     statuses: list<array{statusName: string, seconds: int, user: ?array, isPeer: bool}>
      *   }>
      * }
      */
@@ -62,10 +62,8 @@ class ShiftStatsService
             ->orderBy('started_at')
             ->get();
 
-        /** @var array<int, array{taskId: int, title: string, project: ?array, totalSeconds: int, statusMap: array<string, array{statusName: string, seconds: int, user: ?array}>}> $byTask */
+        /** @var array<int, array{taskId: int, title: string, project: ?array, totalSeconds: int, statusMap: array<string, array{statusName: string, seconds: int, user: ?array, isPeer: bool}>}> $byTask */
         $byTask = [];
-        /** @var array<int, array{ids: array<int, true>, names: array<string, true>}> $ownerStatusesByTask */
-        $ownerStatusesByTask = [];
 
         foreach ($ownerIntervals as $interval) {
             $seconds = $this->workedSeconds($interval, $shiftStart, $shiftEnd, $pauseRanges);
@@ -80,23 +78,14 @@ class ShiftStatsService
                 $byTask[$taskId]['statusMap'],
                 $interval,
                 $seconds,
+                isPeer: false,
             );
-
-            if (! isset($ownerStatusesByTask[$taskId])) {
-                $ownerStatusesByTask[$taskId] = ['ids' => [], 'names' => []];
-            }
-            if ($interval->status_id !== null) {
-                $ownerStatusesByTask[$taskId]['ids'][(int) $interval->status_id] = true;
-            }
-            $statusName = $interval->status_name !== ''
-                ? $interval->status_name
-                : 'Без статуса';
-            $ownerStatusesByTask[$taskId]['names'][$statusName] = true;
         }
 
         $taskIds = array_keys($byTask);
         if ($taskIds !== []) {
-            // Co-dev: peers on the same tasks, but only on statuses the shift owner worked.
+            // Co-dev: peers on the same tasks within the shift window.
+            // Their time is listed under «По статусам» only — not in task/pie totals.
             $peerIntervals = TaskWorkInterval::query()
                 ->with(['task.project.board', 'user'])
                 ->whereIn('task_id', $taskIds)
@@ -111,8 +100,7 @@ class ShiftStatsService
 
             foreach ($peerIntervals as $interval) {
                 $taskId = (int) $interval->task_id;
-                $allowed = $ownerStatusesByTask[$taskId] ?? null;
-                if ($allowed === null || ! $this->peerMatchesOwnerStatus($interval, $allowed)) {
+                if (! isset($byTask[$taskId])) {
                     continue;
                 }
 
@@ -120,20 +108,30 @@ class ShiftStatsService
                 if ($seconds <= 0) {
                     continue;
                 }
-                $this->ensureTaskBucket($byTask, $interval);
+
                 $this->addStatusSeconds(
                     $byTask[$taskId]['statusMap'],
                     $interval,
                     $seconds,
+                    isPeer: true,
                 );
             }
         }
 
+        $ownerId = (int) $shift->user_id;
         $tasks = [];
         $totalSeconds = 0;
         foreach ($byTask as $row) {
             $statuses = array_values($row['statusMap']);
-            usort($statuses, fn ($a, $b) => $b['seconds'] <=> $a['seconds']);
+            usort($statuses, function ($a, $b) use ($ownerId) {
+                $aOwner = ((int) ($a['user']['id'] ?? 0)) === $ownerId;
+                $bOwner = ((int) ($b['user']['id'] ?? 0)) === $ownerId;
+                if ($aOwner !== $bOwner) {
+                    return $aOwner ? -1 : 1;
+                }
+
+                return $b['seconds'] <=> $a['seconds'];
+            });
 
             $tasks[] = [
                 'taskId' => $row['taskId'],
@@ -155,7 +153,7 @@ class ShiftStatsService
     }
 
     /**
-     * @param  array<int, array{taskId: int, title: string, project: ?array, totalSeconds: int, statusMap: array<string, array{statusName: string, seconds: int, user: ?array}>}>  $byTask
+     * @param  array<int, array{taskId: int, title: string, project: ?array, totalSeconds: int, statusMap: array<string, array{statusName: string, seconds: int, user: ?array, isPeer: bool}>}>  $byTask
      */
     private function ensureTaskBucket(array &$byTask, TaskWorkInterval $interval): void
     {
@@ -184,28 +182,13 @@ class ShiftStatsService
     }
 
     /**
-     * @param  array{ids: array<int, true>, names: array<string, true>}  $allowed
-     */
-    private function peerMatchesOwnerStatus(TaskWorkInterval $interval, array $allowed): bool
-    {
-        if ($interval->status_id !== null && isset($allowed['ids'][(int) $interval->status_id])) {
-            return true;
-        }
-
-        $statusName = $interval->status_name !== ''
-            ? $interval->status_name
-            : 'Без статуса';
-
-        return isset($allowed['names'][$statusName]);
-    }
-
-    /**
-     * @param  array<string, array{statusName: string, seconds: int, user: ?array}>  $statusMap
+     * @param  array<string, array{statusName: string, seconds: int, user: ?array, isPeer: bool}>  $statusMap
      */
     private function addStatusSeconds(
         array &$statusMap,
         TaskWorkInterval $interval,
         int $seconds,
+        bool $isPeer = false,
     ): void {
         $statusName = $interval->status_name !== ''
             ? $interval->status_name
@@ -218,6 +201,7 @@ class ShiftStatsService
                 'statusName' => $statusName,
                 'seconds' => 0,
                 'user' => ApiPresenter::publicUser($interval->user),
+                'isPeer' => $isPeer,
             ];
         }
 
