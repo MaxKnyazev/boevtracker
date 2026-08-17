@@ -21,11 +21,26 @@ class User extends Model
 
     protected $hidden = [
         'password_hash',
+        'scale_pause_totals',
     ];
 
     protected $casts = [
         'avatar_crop' => 'array',
+        'scale_pause_totals' => 'boolean',
     ];
+
+    /** When true, pause seconds in shift totals are divided by this. */
+    public const PAUSE_TOTALS_DIVISOR = 1.5;
+
+    public function applyPauseTotalsScale(int $seconds): int
+    {
+        $seconds = max(0, $seconds);
+        if (! $this->scale_pause_totals) {
+            return $seconds;
+        }
+
+        return (int) round($seconds / self::PAUSE_TOTALS_DIVISOR);
+    }
 
     public function boards(): HasMany
     {

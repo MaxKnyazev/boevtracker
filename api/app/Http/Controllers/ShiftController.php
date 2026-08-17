@@ -78,6 +78,7 @@ class ShiftController extends Controller
             'user_id' => $user->id,
             'started_at' => AppDateTime::now(),
         ]);
+        $shift->setRelation('user', $user);
         $shift->load('pauses');
         $this->broadcastShiftUpdated($shift, 'start');
 
@@ -185,7 +186,7 @@ class ShiftController extends Controller
             ]);
         });
 
-        $shift->refresh()->load('pauses');
+        $shift->refresh()->load(['user', 'pauses']);
         $this->broadcastShiftUpdated($shift, 'end');
 
         return response()->json(['shift' => ApiPresenter::workShift($shift)]);
@@ -194,7 +195,7 @@ class ShiftController extends Controller
     private function activeShift(int $userId): ?WorkShift
     {
         return WorkShift::query()
-            ->with('pauses')
+            ->with(['user', 'pauses'])
             ->where('user_id', $userId)
             ->whereNull('ended_at')
             ->latest('started_at')

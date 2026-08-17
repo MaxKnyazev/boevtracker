@@ -31,7 +31,8 @@ export function EndShiftDialog({
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [completedPauseSeconds, setCompletedPauseSeconds] = useState(0);
+  const [pauseAtOpen, setPauseAtOpen] = useState(0);
+  const [openPauseAtAnchor, setOpenPauseAtAnchor] = useState(0);
 
   useEffect(() => {
     if (!open || !shift) return;
@@ -50,9 +51,9 @@ export function EndShiftDialog({
             ),
           )
         : 0;
-    setCompletedPauseSeconds(
-      Math.max(0, (shift.totalPauseSeconds ?? 0) - openPauseSeconds),
-    );
+    setOpenPauseAtAnchor(openPauseSeconds);
+    // API already scaled totalPauseSeconds (includes the current pause).
+    setPauseAtOpen(shift.totalPauseSeconds ?? 0);
   }, [open, shift]);
 
   const totalPauseSeconds = useMemo(() => {
@@ -65,8 +66,8 @@ export function EndShiftDialog({
         Math.floor((endedAt.getTime() - pauseStart) / 1000),
       );
     }
-    return completedPauseSeconds + openSeconds;
-  }, [shift, endedAt, completedPauseSeconds]);
+    return Math.max(0, pauseAtOpen + (openSeconds - openPauseAtAnchor));
+  }, [shift, endedAt, pauseAtOpen, openPauseAtAnchor]);
 
   const totals = useMemo(() => {
     if (!shift || !endedAt) {

@@ -397,6 +397,12 @@ class ApiPresenter
             );
         }
 
+        $rawPauseSeconds = $completedPauseSeconds + $currentPauseSeconds;
+        $shift->loadMissing('user');
+        $totalPauseSeconds = $shift->user
+            ? $shift->user->applyPauseTotalsScale($rawPauseSeconds)
+            : $rawPauseSeconds;
+
         // Prefer repaired window for completed shifts so UI matches stats.
         $startedAt = $shift->started_at;
         $endedAt = $shift->ended_at;
@@ -418,7 +424,7 @@ class ApiPresenter
                 : ($openPause ? 'paused' : 'active'),
             'pausedAt' => $openPause ? self::date($openPause->started_at) : null,
             'pauseElapsedSeconds' => $currentPauseSeconds,
-            'totalPauseSeconds' => $completedPauseSeconds + $currentPauseSeconds,
+            'totalPauseSeconds' => $totalPauseSeconds,
         ];
     }
 
