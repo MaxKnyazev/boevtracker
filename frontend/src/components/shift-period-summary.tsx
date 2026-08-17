@@ -222,11 +222,11 @@ export function ShiftPeriodSummary({
         <StatCard label="Смен" value={String(summary.shiftCount)} />
         <StatCard
           label="Общее время"
-          value={formatSeconds(summary.withoutBreaks)}
+          value={formatSeconds(summary.withBreaks)}
         />
         <StatCard
-          label="С перерывами"
-          value={formatSeconds(summary.withBreaks)}
+          label="Без перерывов"
+          value={formatSeconds(summary.withoutBreaks)}
         />
         <StatCard
           label="Перерывы"
@@ -248,7 +248,7 @@ export function ShiftPeriodSummary({
                   <th className="px-3 py-2.5 font-medium">Сотрудник</th>
                   <th className="px-3 py-2.5 font-medium">Смен</th>
                   <th className="px-3 py-2.5 font-medium">Общее время</th>
-                  <th className="px-3 py-2.5 font-medium">С перерывами</th>
+                  <th className="px-3 py-2.5 font-medium">Без перерывов</th>
                   <th className="px-3 py-2.5 font-medium">Перерывы</th>
                 </tr>
               </thead>
@@ -266,10 +266,10 @@ export function ShiftPeriodSummary({
                     </td>
                     <td className="px-3 py-2.5 tabular-nums">{row.shiftCount}</td>
                     <td className="px-3 py-2.5 tabular-nums font-medium">
-                      {formatSeconds(row.withoutBreaks)}
+                      {formatSeconds(row.withBreaks)}
                     </td>
                     <td className="px-3 py-2.5 tabular-nums font-medium">
-                      {formatSeconds(row.withBreaks)}
+                      {formatSeconds(row.withoutBreaks)}
                     </td>
                     <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
                       {formatSeconds(row.pauseSeconds, { withSeconds: true })}
@@ -320,7 +320,7 @@ export function ShiftPeriodSummary({
                         typeof value === 'number' ? value : Number(value);
                       return [
                         `${Number.isFinite(n) ? n : 0} ч`,
-                        'Общее время',
+                        'Без перерывов',
                       ];
                     }}
                     labelFormatter={(label) => String(label)}

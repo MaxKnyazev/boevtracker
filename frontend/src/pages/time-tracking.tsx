@@ -235,13 +235,13 @@ export function TimeTrackingPage() {
                     />
                     <SortableTh
                       label="Общее время"
-                      field="withoutBreaks"
+                      field="withBreaks"
                       view={view}
                       onCycle={cycleSort}
                     />
                     <SortableTh
-                      label="С перерывами"
-                      field="withBreaks"
+                      label="Без перерывов"
+                      field="withoutBreaks"
                       view={view}
                       onCycle={cycleSort}
                     />
@@ -288,10 +288,10 @@ export function TimeTrackingPage() {
                           </Badge>
                         </td>
                         <td className="px-3 py-2.5 tabular-nums font-medium">
-                          {formatSeconds(totals.withoutBreaks)}
+                          {formatSeconds(totals.withBreaks)}
                         </td>
                         <td className="px-3 py-2.5 tabular-nums font-medium">
-                          {formatSeconds(totals.withBreaks)}
+                          {formatSeconds(totals.withoutBreaks)}
                         </td>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
                           {formatSeconds(shift.totalPauseSeconds ?? 0, {

@@ -133,11 +133,11 @@ export function ShiftStatsDialog({
           <div className="grid gap-2 rounded-xl border border-border bg-muted/20 px-3 py-3 text-sm sm:grid-cols-3">
             <StatLine
               label="Общее время"
-              value={formatSeconds(totals.withoutBreaks)}
+              value={formatSeconds(totals.withBreaks)}
             />
             <StatLine
-              label="С перерывами"
-              value={formatSeconds(totals.withBreaks)}
+              label="Без перерывов"
+              value={formatSeconds(totals.withoutBreaks)}
             />
             <StatLine
               label="Перерывы"

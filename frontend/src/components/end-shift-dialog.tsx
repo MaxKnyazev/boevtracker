@@ -181,13 +181,13 @@ export function EndShiftDialog({
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-muted-foreground">Общее время</span>
                   <span className="font-medium tabular-nums">
-                    {formatSeconds(totals.withoutBreaks)}
+                    {formatSeconds(totals.withBreaks)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">С перерывами</span>
+                  <span className="text-muted-foreground">Без перерывов</span>
                   <span className="font-medium tabular-nums">
-                    {formatSeconds(totals.withBreaks)}
+                    {formatSeconds(totals.withoutBreaks)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
