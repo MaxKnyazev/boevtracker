@@ -8,8 +8,8 @@ export type AvatarUser = {
   avatarUrl?: string | null;
 };
 
-const SIZE_PX = { sm: 28, md: 36, lg: 40, xl: 80 } as const;
-const FONT_PX = { sm: 10, md: 12, lg: 14, xl: 24 } as const;
+const SIZE_PX = { sm: 28, md: 36, lg: 40, xl: 80, '2xl': 144 } as const;
+const FONT_PX = { sm: 10, md: 12, lg: 14, xl: 24, '2xl': 40 } as const;
 
 /** Gap between avatar edge and the color ring. */
 export const AVATAR_RING_GAP = 2;
@@ -49,7 +49,7 @@ export function UserAvatar({
   title,
 }: {
   user?: AvatarUser | null;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   className?: string;
   title?: string;
 }) {

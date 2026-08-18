@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { AppSelect } from '@/components/ui/select';
 import { ROLE_LABELS } from '@/lib/utils';
 import { UserAvatar, displayName } from '@/components/user-avatar';
+import { UserPreviewDialog } from '@/components/user-preview-dialog';
 
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: 'ADMIN', label: ROLE_LABELS.ADMIN },
@@ -18,6 +19,7 @@ export function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [previewUser, setPreviewUser] = useState<User | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -76,7 +78,11 @@ export function UsersPage() {
             ) : (
               <div className="space-y-3">
                 {pending.map((u) => (
-                  <UserRow key={u.id} user={u}>
+                  <UserRow
+                    key={u.id}
+                    user={u}
+                    onPreview={() => setPreviewUser(u)}
+                  >
                     <Button
                       size="sm"
                       onClick={() => approve(u.id, 'DEVELOPER')}
@@ -107,7 +113,11 @@ export function UsersPage() {
             <h2 className="mb-3 text-lg font-medium">Активные пользователи</h2>
             <div className="space-y-3">
               {active.map((u) => (
-                <UserRow key={u.id} user={u}>
+                <UserRow
+                  key={u.id}
+                  user={u}
+                  onPreview={() => setPreviewUser(u)}
+                >
                   <RoleSelect
                     value={u.role}
                     onChange={(role) => changeRole(u.id, role)}
@@ -118,20 +128,30 @@ export function UsersPage() {
           </section>
         </div>
       )}
+      <UserPreviewDialog
+        user={previewUser}
+        onClose={() => setPreviewUser(null)}
+      />
     </div>
   );
 }
 
 function UserRow({
   user,
+  onPreview,
   children,
 }: {
   user: User;
+  onPreview: () => void;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
-      <div className="flex items-center gap-3">
+      <button
+        type="button"
+        className="flex min-w-0 cursor-pointer items-center gap-3 rounded-lg text-left outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={onPreview}
+      >
         <UserAvatar user={user} size="md" />
         <div>
           <div className="font-medium">{displayName(user)}</div>
@@ -141,7 +161,7 @@ function UserRow({
             <span>с {new Date(user.createdAt).toLocaleDateString('ru-RU')}</span>
           </div>
         </div>
-      </div>
+      </button>
       <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   );

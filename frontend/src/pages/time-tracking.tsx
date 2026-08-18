@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ArrowDown,
   ArrowUp,
@@ -55,6 +56,7 @@ function readTab(): TimeTab {
 }
 
 export function TimeTrackingPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTabState] = useState<TimeTab>(() => readTab());
   const [shifts, setShifts] = useState<WorkShift[]>([]);
   const [error, setError] = useState('');
@@ -62,15 +64,17 @@ export function TimeTrackingPage() {
   const [view, setView] = usePersistedShiftView(SHIFT_VIEW_STORAGE_KEY);
   const ownShift = useShiftStore((s) => s.shift);
   const [selectedShift, setSelectedShift] = useState<WorkShift | null>(null);
+  const [summaryFocusUser, setSummaryFocusUser] = useState<string | undefined>();
+  const [summaryFocusKey, setSummaryFocusKey] = useState(0);
 
-  const setTab = (next: TimeTab) => {
+  const setTab = useCallback((next: TimeTab) => {
     setTabState(next);
     try {
       localStorage.setItem(TAB_STORAGE_KEY, next);
     } catch {
       // ignore
     }
-  };
+  }, []);
 
   const load = useCallback(async (opts?: { soft?: boolean }) => {
     if (!opts?.soft) setLoading(true);
@@ -117,6 +121,17 @@ export function TimeTrackingPage() {
   }, [ownShiftKey, load]);
 
   const users = useMemo(() => uniqueShiftUsers(shifts), [shifts]);
+
+  useEffect(() => {
+    const userParam = searchParams.get('user');
+    if (!userParam || !/^\d+$/.test(userParam)) return;
+    setSummaryFocusUser(userParam);
+    setSummaryFocusKey((key) => key + 1);
+    setTab('summary');
+    const next = new URLSearchParams(searchParams);
+    next.delete('user');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, setTab]);
 
   useEffect(() => {
     if (loading) return;
@@ -338,7 +353,12 @@ export function TimeTrackingPage() {
       ) : loading ? (
         <p className="text-muted-foreground">Загрузка...</p>
       ) : (
-        <ShiftPeriodSummary shifts={shifts} users={users} />
+        <ShiftPeriodSummary
+          shifts={shifts}
+          users={users}
+          selectedUser={summaryFocusUser}
+          selectedUserKey={summaryFocusKey}
+        />
       )}
 
       <ShiftStatsDialog
