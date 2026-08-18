@@ -15,6 +15,11 @@ import { ru } from 'date-fns/locale';
 import type { PublicUser, WorkShift } from '@/lib/api';
 import { displayName } from '@/components/user-avatar';
 import { shiftTotals } from '@/lib/shift-view';
+import { APP_DISPLAY_TIMEZONE } from '@/lib/utils';
+
+export const STANDARD_WORKDAY_SECONDS = 8 * 3600;
+/** Daily overtime shorter than this is ignored in the summary. */
+export const OVERTIME_MIN_SECONDS = 10 * 60;
 
 export type SummaryPeriodKind = 'day' | 'week' | 'month' | 'custom';
 
@@ -40,6 +45,7 @@ export type UserShiftSummary = {
   withBreaks: number;
   withoutBreaks: number;
   pauseSeconds: number;
+  overtimeSeconds: number;
 };
 
 export type PeriodShiftSummary = {
@@ -48,70 +54,99 @@ export type PeriodShiftSummary = {
   withBreaks: number;
   withoutBreaks: number;
   pauseSeconds: number;
+  overtimeSeconds: number;
   byUser: UserShiftSummary[];
 };
+
+export const WEEK_STARTS_ON = 1 as const;
+
+const WEEK = { weekStartsOn: WEEK_STARTS_ON };
 
 function toDateKey(d: Date): string {
   return format(d, 'yyyy-MM-dd');
 }
 
+function parseDay(value: string, fallback: Date): Date {
+  const d = parseISO(value);
+  return Number.isNaN(d.getTime()) ? fallback : d;
+}
+
 export function defaultSummaryPeriod(now = new Date()): SummaryPeriodState {
-  const key = toDateKey(now);
   return {
     kind: 'week',
-    anchor: key,
-    customFrom: key,
-    customTo: key,
     user: 'all',
+    ...periodBoundsForKind('week', now),
   };
+}
+
+export function periodBoundsForKind(
+  kind: SummaryPeriodKind,
+  now = new Date(),
+): Pick<SummaryPeriodState, 'anchor' | 'customFrom' | 'customTo'> {
+  const key = toDateKey(now);
+  if (kind === 'week') {
+    return {
+      anchor: key,
+      customFrom: toDateKey(startOfWeek(now, WEEK)),
+      customTo: toDateKey(endOfWeek(now, WEEK)),
+    };
+  }
+  if (kind === 'month') {
+    return {
+      anchor: key,
+      customFrom: toDateKey(startOfMonth(now)),
+      customTo: toDateKey(endOfMonth(now)),
+    };
+  }
+  return { anchor: key, customFrom: key, customTo: key };
+}
+
+export function applySummaryPeriodKind(
+  state: SummaryPeriodState,
+  kind: SummaryPeriodKind,
+  now = new Date(),
+): SummaryPeriodState {
+  const day = parseDay(state.anchor || state.customFrom, now);
+  if (kind === 'month') {
+    return { ...state, kind, ...periodBoundsForKind('month', day) };
+  }
+  if (kind === 'week') {
+    return { ...state, kind, ...periodBoundsForKind('week', day) };
+  }
+  if (kind === 'day') {
+    const key = toDateKey(day);
+    return { ...state, kind, anchor: key, customFrom: key, customTo: key };
+  }
+  return { ...state, kind };
 }
 
 export function resolveSummaryRange(
   state: SummaryPeriodState,
   now = new Date(),
 ): SummaryRange {
-  if (state.kind === 'custom') {
-    let from = startOfDay(parseISO(state.customFrom));
-    let to = endOfDay(parseISO(state.customTo));
-    if (Number.isNaN(from.getTime())) from = startOfDay(now);
-    if (Number.isNaN(to.getTime())) to = endOfDay(now);
-    if (to < from) {
-      const tmp = from;
-      from = startOfDay(to);
-      to = endOfDay(tmp);
-    }
-    return {
-      from,
-      to,
-      label: `${format(from, 'dd.MM.yyyy')} — ${format(to, 'dd.MM.yyyy')}`,
-    };
-  }
-
-  const anchor = parseISO(state.anchor);
-  const base = Number.isNaN(anchor.getTime()) ? now : anchor;
-
-  if (state.kind === 'day') {
-    const from = startOfDay(base);
-    const to = endOfDay(base);
-    return { from, to, label: format(from, 'dd.MM.yyyy') };
+  let from = startOfDay(parseDay(state.customFrom, now));
+  let to = startOfDay(parseDay(state.customTo, now));
+  if (to < from) {
+    const tmp = from;
+    from = to;
+    to = tmp;
   }
 
   if (state.kind === 'week') {
-    const from = startOfWeek(base, { weekStartsOn: 1 });
-    const to = endOfWeek(base, { weekStartsOn: 1 });
-    return {
-      from,
-      to,
-      label: `${format(from, 'dd.MM.yyyy')} — ${format(to, 'dd.MM.yyyy')}`,
-    };
+    from = startOfWeek(from, WEEK);
+    to = endOfWeek(to, WEEK);
+  } else {
+    to = endOfDay(to);
   }
 
-  const from = startOfMonth(base);
-  const to = endOfMonth(base);
+  const sameDay = format(from, 'yyyy-MM-dd') === format(to, 'yyyy-MM-dd');
   return {
     from,
     to,
-    label: format(from, 'LLLL yyyy', { locale: ru }),
+    label:
+      state.kind === 'day' && sameDay
+        ? format(from, 'dd.MM.yyyy')
+        : `${format(from, 'dd.MM.yyyy')} — ${format(to, 'dd.MM.yyyy')}`,
   };
 }
 
@@ -120,13 +155,69 @@ export function shiftSummaryPeriod(
   direction: -1 | 1,
 ): SummaryPeriodState {
   if (state.kind === 'custom') return state;
-  const anchor = parseISO(state.anchor);
-  const base = Number.isNaN(anchor.getTime()) ? new Date() : anchor;
-  let next = base;
-  if (state.kind === 'day') next = addDays(base, direction);
-  else if (state.kind === 'week') next = addWeeks(base, direction);
-  else next = addMonths(base, direction);
-  return { ...state, anchor: toDateKey(next) };
+
+  if (state.kind === 'month') {
+    const anchor = parseDay(state.anchor, new Date());
+    const next = addMonths(anchor, direction);
+    return { ...state, ...periodBoundsForKind('month', next) };
+  }
+
+  const from = parseDay(state.customFrom, new Date());
+  const to = parseDay(state.customTo, new Date());
+  if (state.kind === 'week') {
+    return {
+      ...state,
+      customFrom: toDateKey(addWeeks(from, direction)),
+      customTo: toDateKey(addWeeks(to, direction)),
+      anchor: toDateKey(addWeeks(from, direction)),
+    };
+  }
+
+  return {
+    ...state,
+    customFrom: toDateKey(addDays(from, direction)),
+    customTo: toDateKey(addDays(to, direction)),
+    anchor: toDateKey(addDays(from, direction)),
+  };
+}
+
+export function applyCalendarRangeClick(
+  state: SummaryPeriodState,
+  day: Date,
+  startDay: Date | null,
+): { state: SummaryPeriodState; startDay: Date | null } {
+  if (!startDay) {
+    const key = toDateKey(day);
+    return {
+      state: {
+        ...state,
+        kind: 'custom',
+        customFrom: key,
+        customTo: key,
+        anchor: key,
+      },
+      startDay: startOfDay(day),
+    };
+  }
+
+  let from = startOfDay(startDay);
+  let to = startOfDay(day);
+  if (to < from) {
+    const tmp = from;
+    from = to;
+    to = tmp;
+  }
+
+  return {
+    state: {
+      ...state,
+      kind: 'custom',
+      customFrom: toDateKey(from),
+      customTo: toDateKey(to),
+      anchor: toDateKey(from),
+    },
+    startDay: null,
+  };
 }
 
 /** Shifts that started inside [from, to]. */
@@ -145,6 +236,29 @@ export function shiftsInRange(
   });
 }
 
+function moscowDayInfo(value: string): { key: string; isWeekend: boolean } {
+  const date = new Date(value);
+  const key = new Intl.DateTimeFormat('en-CA', {
+    timeZone: APP_DISPLAY_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+  const weekday = new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_DISPLAY_TIMEZONE,
+    weekday: 'short',
+  }).format(date);
+  return { key, isWeekend: weekday === 'Sat' || weekday === 'Sun' };
+}
+
+function overtimeForDay(withoutBreaks: number, isWeekend: boolean): number {
+  if (withoutBreaks <= 0) return 0;
+  const extra = isWeekend
+    ? withoutBreaks
+    : Math.max(0, withoutBreaks - STANDARD_WORKDAY_SECONDS);
+  return extra > OVERTIME_MIN_SECONDS ? extra : 0;
+}
+
 export function buildPeriodSummary(
   shifts: WorkShift[],
   range: SummaryRange,
@@ -156,6 +270,8 @@ export function buildPeriodSummary(
   let withoutBreaks = 0;
   let pauseSeconds = 0;
   const byUserMap = new Map<number, UserShiftSummary>();
+  /** Net work seconds per user per Moscow calendar day. */
+  const dayNet = new Map<string, { userId: number; seconds: number; isWeekend: boolean }>();
 
   for (const shift of inRange) {
     const totals = shiftTotals(shift, nowMs);
@@ -178,8 +294,30 @@ export function buildPeriodSummary(
         withBreaks: totals.withBreaks,
         withoutBreaks: totals.withoutBreaks,
         pauseSeconds: shift.totalPauseSeconds ?? 0,
+        overtimeSeconds: 0,
       });
     }
+
+    const day = moscowDayInfo(shift.startedAt);
+    const dayKey = `${user.id}|${day.key}`;
+    const bucket = dayNet.get(dayKey);
+    if (bucket) {
+      bucket.seconds += totals.withoutBreaks;
+    } else {
+      dayNet.set(dayKey, {
+        userId: user.id,
+        seconds: totals.withoutBreaks,
+        isWeekend: day.isWeekend,
+      });
+    }
+  }
+
+  let overtimeSeconds = 0;
+  for (const bucket of dayNet.values()) {
+    const extra = overtimeForDay(bucket.seconds, bucket.isWeekend);
+    overtimeSeconds += extra;
+    const row = byUserMap.get(bucket.userId);
+    if (row) row.overtimeSeconds += extra;
   }
 
   const byUser = [...byUserMap.values()].sort(
@@ -194,6 +332,7 @@ export function buildPeriodSummary(
     withBreaks,
     withoutBreaks,
     pauseSeconds,
+    overtimeSeconds,
     byUser,
   };
 }
