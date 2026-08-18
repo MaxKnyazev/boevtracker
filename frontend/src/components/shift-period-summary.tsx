@@ -242,6 +242,13 @@ export function ShiftPeriodSummary({
     setVisibleMonth(startOfMonth(month));
   };
 
+  const openUserFromChartBar = (data: { payload?: { id?: number } }) => {
+    const id = Number(data?.payload?.id);
+    if (!Number.isFinite(id)) return;
+    const row = summary.byUser.find((item) => item.user.id === id);
+    if (row) setPreviewUser(row.user);
+  };
+
   return (
     <div className="space-y-4">
       <div className="space-y-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-2">
@@ -333,26 +340,6 @@ export function ShiftPeriodSummary({
         </div>
       </div>
 
-      <div className="grid gap-2 rounded-xl border border-border bg-muted/20 px-3 py-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard label="Смен" value={String(summary.shiftCount)} />
-        <StatCard
-          label="Общее время"
-          value={formatSeconds(summary.withBreaks)}
-        />
-        <StatCard
-          label="Без перерывов"
-          value={formatSeconds(summary.withoutBreaks)}
-        />
-        <StatCard
-          label="Перерывы"
-          value={formatSeconds(summary.pauseSeconds, { withSeconds: true })}
-        />
-        <StatCard
-          label="Переработки"
-          value={formatSeconds(summary.overtimeSeconds)}
-        />
-      </div>
-
       <div className="grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)] lg:items-stretch">
         <div className="flex h-full flex-col rounded-xl border border-border px-3 py-3">
           <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -414,25 +401,7 @@ export function ShiftPeriodSummary({
                   layout="vertical"
                   margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
                   accessibilityLayer={false}
-                  style={{ outline: 'none', cursor: 'pointer' }}
-                  onClick={(state) => {
-                    const index = Number(state.activeIndex);
-                    const byIndex = Number.isFinite(index)
-                      ? chartData[index]
-                      : undefined;
-                    const byLabel =
-                      state.activeLabel == null
-                        ? undefined
-                        : chartData.find(
-                            (item) => item.name === String(state.activeLabel),
-                          );
-                    const match = byIndex ?? byLabel;
-                    if (!match) return;
-                    const row = summary.byUser.find(
-                      (item) => item.user.id === match.id,
-                    );
-                    if (row) setPreviewUser(row.user);
-                  }}
+                  style={{ outline: 'none' }}
                 >
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                   <XAxis
@@ -446,30 +415,6 @@ export function ShiftPeriodSummary({
                     width={100}
                     fontSize={11}
                     tickLine={false}
-                    tick={(props) => {
-                      const { x, y, payload } = props;
-                      return (
-                        <text
-                          x={x}
-                          y={y}
-                          dy={4}
-                          textAnchor="end"
-                          className="cursor-pointer fill-foreground text-[11px]"
-                          onClick={() => {
-                            const match = chartData.find(
-                              (item) => item.name === payload.value,
-                            );
-                            if (!match) return;
-                            const row = summary.byUser.find(
-                              (item) => item.user.id === match.id,
-                            );
-                            if (row) setPreviewUser(row.user);
-                          }}
-                        >
-                          {payload.value}
-                        </text>
-                      );
-                    }}
                   />
                   <Tooltip
                     shared={false}
@@ -482,7 +427,9 @@ export function ShiftPeriodSummary({
                     stackId="time"
                     fill="#0d9488"
                     maxBarSize={28}
+                    cursor="pointer"
                     activeBar={{ fill: '#2dd4bf', stroke: 'none' }}
+                    onClick={(data) => openUserFromChartBar(data)}
                   />
                   <Bar
                     dataKey="pauseSeconds"
@@ -490,7 +437,9 @@ export function ShiftPeriodSummary({
                     stackId="time"
                     fill="#d97706"
                     maxBarSize={28}
+                    cursor="pointer"
                     activeBar={{ fill: '#fbbf24', stroke: 'none' }}
+                    onClick={(data) => openUserFromChartBar(data)}
                   />
                   <Bar
                     dataKey="overtimeSeconds"
@@ -499,7 +448,9 @@ export function ShiftPeriodSummary({
                     fill="#dc2626"
                     radius={[0, 4, 4, 0]}
                     maxBarSize={28}
+                    cursor="pointer"
                     activeBar={{ fill: '#f87171', stroke: 'none' }}
+                    onClick={(data) => openUserFromChartBar(data)}
                   />
                 </BarChart>
               </ResponsiveContainer>
@@ -701,15 +652,6 @@ function ChartSegmentTooltip({
       <div className="mt-0.5" style={{ color: item.color }}>
         {item.name}: {formatSeconds(Number.isFinite(n) ? n : 0)}
       </div>
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className={cn('flex items-center justify-between gap-2 sm:block')}>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="font-medium tabular-nums">{value}</div>
     </div>
   );
 }
