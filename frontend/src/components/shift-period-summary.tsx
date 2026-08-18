@@ -416,9 +416,21 @@ export function ShiftPeriodSummary({
                   accessibilityLayer={false}
                   style={{ outline: 'none', cursor: 'pointer' }}
                   onClick={(state) => {
-                    const id = Number(state?.activePayload?.[0]?.payload?.id);
-                    if (!Number.isFinite(id)) return;
-                    const row = summary.byUser.find((item) => item.user.id === id);
+                    const index = Number(state.activeIndex);
+                    const byIndex = Number.isFinite(index)
+                      ? chartData[index]
+                      : undefined;
+                    const byLabel =
+                      state.activeLabel == null
+                        ? undefined
+                        : chartData.find(
+                            (item) => item.name === String(state.activeLabel),
+                          );
+                    const match = byIndex ?? byLabel;
+                    if (!match) return;
+                    const row = summary.byUser.find(
+                      (item) => item.user.id === match.id,
+                    );
                     if (row) setPreviewUser(row.user);
                   }}
                 >
