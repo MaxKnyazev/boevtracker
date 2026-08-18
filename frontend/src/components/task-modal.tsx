@@ -68,6 +68,7 @@ import {
 } from '@/components/user-avatar';
 import { AssigneeStack } from '@/components/assignee-stack';
 import { ChooseActiveAssigneeDialog } from '@/components/choose-active-assignee-dialog';
+import { CloseTaskDialog } from '@/components/close-task-dialog';
 import {
   FileDropZone,
   MAX_UPLOAD_FILE_SIZE,
@@ -252,6 +253,9 @@ export function TaskModal({
     assigneeIds?: number[];
     assignees: PublicUser[];
   } | null>(null);
+  const [pendingCloseStatusId, setPendingCloseStatusId] = useState<number | null>(
+    null,
+  );
   const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
   const [assigneeDraftIds, setAssigneeDraftIds] = useState<number[]>([]);
   const [chatHeight, setChatHeight] = useState(readStoredChatHeight);
@@ -410,11 +414,15 @@ export function TaskModal({
   };
 
   const changeStatus = async (statusId: number) => {
-    if (!task) return;
+    if (!task || task.statusId === statusId) return;
     const assignees = taskAssignees(task);
     const nextStatus = project?.statuses?.find((s) => s.id === statusId);
     const toClosed = nextStatus?.name === CLOSED_STATUS_NAME;
-    if (!toClosed && assignees.length > 1) {
+    if (toClosed) {
+      setPendingCloseStatusId(statusId);
+      return;
+    }
+    if (assignees.length > 1) {
       setActiveChoice({
         mode: 'status',
         statusId,
@@ -1079,6 +1087,40 @@ export function TaskModal({
                       const mine = me?.id === c.author?.id;
                       const editing = editingCommentId === c.id;
                       const highlighted = highlightedCommentId === c.id;
+                      if (c.kind === 'status_change') {
+                        const [statusLine, ...noteLines] = c.body.split('\n');
+                        const note = noteLines.join('\n').trim();
+                        return (
+                          <div
+                            key={c.id}
+                            data-comment-id={c.id}
+                            className="flex justify-center px-1 py-0.5"
+                          >
+                            <div className="max-w-[92%] rounded-lg bg-muted/50 px-3 py-1.5 text-center text-[11px] leading-snug text-muted-foreground">
+                              <div>
+                                <span className="font-medium text-foreground">
+                                  {displayName(c.author)}
+                                </span>
+                                <span className="mx-1">·</span>
+                                <span className="break-words [overflow-wrap:anywhere]">
+                                  {statusLine}
+                                </span>
+                                <span className="ml-2 opacity-70">
+                                  {formatChatTime(c.createdAt)}
+                                </span>
+                              </div>
+                              {note ? (
+                                <div className="mt-1 break-words [overflow-wrap:anywhere]">
+                                  <span className="text-muted-foreground">
+                                    С комментарием:{' '}
+                                  </span>
+                                  <span className="text-white">{note}</span>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      }
                       const bubble = (
                         <div
                           className={cn(
@@ -1741,6 +1783,21 @@ export function TaskModal({
           onClose={() => setLightboxFile(null)}
         />
       )}
+
+      <CloseTaskDialog
+        open={pendingCloseStatusId != null}
+        taskTitle={task?.title}
+        onCancel={() => setPendingCloseStatusId(null)}
+        onConfirm={async (closeComment) => {
+          const statusId = pendingCloseStatusId;
+          setPendingCloseStatusId(null);
+          if (statusId == null) return;
+          await saveField({
+            statusId,
+            ...(closeComment ? { closeComment } : {}),
+          });
+        }}
+      />
 
       {activeChoice && (
         <ChooseActiveAssigneeDialog

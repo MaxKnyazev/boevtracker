@@ -109,6 +109,7 @@ export type CommentReplyTo = {
 export type Comment = {
   id: number;
   body: string;
+  kind?: 'user' | 'status_change';
   createdAt: string;
   editedAt?: string | null;
   replyToId?: number | null;
@@ -568,7 +569,12 @@ export const api = {
     }),
   moveTaskPosition: (
     id: number,
-    data: { statusId: number; index: number; activeAssigneeId?: number },
+    data: {
+      statusId: number;
+      index: number;
+      activeAssigneeId?: number;
+      closeComment?: string;
+    },
   ) =>
     request<{ task: Task }>(`/api/tasks/${id}/position`, {
       method: 'PUT',

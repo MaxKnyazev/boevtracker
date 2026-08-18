@@ -50,6 +50,7 @@ import { MoveBoardDialog } from '@/components/move-board-dialog';
 import { MoveProjectDialog } from '@/components/move-project-dialog';
 import { TaskViewControls } from '@/components/task-view-controls';
 import { ChooseActiveAssigneeDialog } from '@/components/choose-active-assignee-dialog';
+import { CloseTaskDialog } from '@/components/close-task-dialog';
 import {
   FileDropZone,
   MAX_UPLOAD_FILE_SIZE,
@@ -236,6 +237,11 @@ export function ProjectPage({
   const [createFiles, setCreateFiles] = useState<File[]>([]);
   const [creating, setCreating] = useState(false);
   const [pendingMove, setPendingMove] = useState<{
+    task: Task;
+    statusId: number;
+    index: number;
+  } | null>(null);
+  const [pendingClose, setPendingClose] = useState<{
     task: Task;
     statusId: number;
     index: number;
@@ -507,6 +513,11 @@ export function ProjectPage({
     const assignees = original ? taskAssignees(original) : [];
     const statusChanged = original != null && original.statusId !== statusId;
     const targetStatus = project?.statuses.find((s) => s.id === statusId);
+
+    if (statusChanged && targetStatus && isClosedStatus(targetStatus)) {
+      setPendingClose({ task: original!, statusId, index });
+      return;
+    }
 
     if (
       statusChanged &&
@@ -933,6 +944,32 @@ export function ProjectPage({
           onMoved={async () => {
             setMoveProjectTask(null);
             await load();
+          }}
+        />
+      )}
+
+      {pendingClose && (
+        <CloseTaskDialog
+          open
+          taskTitle={pendingClose.task.title}
+          onCancel={() => {
+            setPendingClose(null);
+            void load();
+          }}
+          onConfirm={async (closeComment) => {
+            const move = pendingClose;
+            setPendingClose(null);
+            try {
+              await api.moveTaskPosition(move.task.id, {
+                statusId: move.statusId,
+                index: move.index,
+                ...(closeComment ? { closeComment } : {}),
+              });
+              await load();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Ошибка переноса');
+              await load();
+            }
           }}
         />
       )}

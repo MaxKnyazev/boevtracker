@@ -163,6 +163,7 @@ class TaskController extends Controller
         User $user,
         ?int $fromStatusId,
         int $toStatusId,
+        string $closeComment = '',
     ): void {
         if ($fromStatusId !== null && $fromStatusId === $toStatusId) {
             return;
@@ -186,6 +187,24 @@ class TaskController extends Controller
             'created_at' => now(),
         ]);
 
+        if ($fromStatusId !== null) {
+            $fromLabel = $from?->name ?: '—';
+            $body = 'Статус изменён: «'.$fromLabel.'» → «'.$to->name.'»';
+            $note = trim($closeComment);
+            if (
+                $note !== ''
+                && $to->name === Constants::CLOSED_STATUS_NAME
+            ) {
+                $body .= "\n".$note;
+            }
+            Comment::query()->create([
+                'body' => $body,
+                'kind' => 'status_change',
+                'task_id' => $task->id,
+                'author_id' => $user->id,
+            ]);
+        }
+
         // Skip notifications for the initial status on task create (from is null).
         if ($fromStatusId !== null) {
             if (! $task->relationLoaded('assignees')) {
@@ -201,6 +220,11 @@ class TaskController extends Controller
                 $to->name,
             );
         }
+    }
+
+    private function closeCommentFromRequest(Request $request): string
+    {
+        return trim((string) $request->input('closeComment', ''));
     }
 
     private function resolveOpenStatus(int $projectId, ?string $preferredName = null): ?ProjectStatus
@@ -379,6 +403,7 @@ class TaskController extends Controller
             'assigneeIds.*' => ['integer'],
             'activeAssigneeId' => ['nullable', 'integer'],
             'projectId' => ['sometimes', 'integer'],
+            'closeComment' => ['nullable', 'string', 'max:5000'],
         ], [
             'title.min' => 'Укажите название задачи',
             'title.max' => 'Название задачи не длиннее 255 символов',
@@ -514,7 +539,13 @@ class TaskController extends Controller
         $task->load(['assignees', 'status', 'project.statuses']);
 
         if ($statusChanging) {
-            $this->recordStatusChange($task, $user, $fromStatusId, $toStatusId);
+            $this->recordStatusChange(
+                $task,
+                $user,
+                $fromStatusId,
+                $toStatusId,
+                $this->closeCommentFromRequest($request),
+            );
             $toStatus = $task->status
                 ?? ProjectStatus::query()->find($toStatusId);
             if ($toStatus) {
@@ -613,6 +644,7 @@ class TaskController extends Controller
             'statusId' => ['required', 'integer'],
             'index' => ['required', 'integer', 'min:0'],
             'activeAssigneeId' => ['nullable', 'integer'],
+            'closeComment' => ['nullable', 'string', 'max:5000'],
         ]);
         if ($validator->fails()) {
             return response()->json(['error' => 'Укажите statusId и index'], 400);
@@ -665,6 +697,8 @@ class TaskController extends Controller
             array_slice($siblings, $index)
         );
 
+        $closeComment = $this->closeCommentFromRequest($request);
+
         DB::transaction(function () use (
             $task,
             $status,
@@ -674,6 +708,7 @@ class TaskController extends Controller
             $user,
             $fromStatusId,
             $activeForStatus,
+            $closeComment,
         ) {
             $payload = [
                 'status_id' => $status->id,
@@ -692,7 +727,13 @@ class TaskController extends Controller
             }
 
             if ($statusChanged) {
-                $this->recordStatusChange($task, $user, $fromStatusId, (int) $status->id);
+                $this->recordStatusChange(
+                    $task,
+                    $user,
+                    $fromStatusId,
+                    (int) $status->id,
+                    $closeComment,
+                );
             }
         });
 
@@ -856,6 +897,9 @@ class TaskController extends Controller
         if (! $comment) {
             return response()->json(['error' => 'Комментарий не найден'], 404);
         }
+        if ($comment->kind === 'status_change') {
+            return response()->json(['error' => 'Системное сообщение нельзя изменить'], 403);
+        }
         if ($comment->author_id !== $user->id) {
             return response()->json(['error' => 'Можно редактировать только свои сообщения'], 403);
         }
@@ -921,6 +965,9 @@ class TaskController extends Controller
         $comment = Comment::query()->with('files')->find($id);
         if (! $comment) {
             return response()->json(['error' => 'Комментарий не найден'], 404);
+        }
+        if ($comment->kind === 'status_change') {
+            return response()->json(['error' => 'Системное сообщение нельзя удалить'], 403);
         }
         if ($comment->author_id !== $user->id) {
             return response()->json(['error' => 'Можно удалять только свои сообщения'], 403);

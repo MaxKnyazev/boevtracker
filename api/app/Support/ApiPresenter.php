@@ -209,6 +209,7 @@ class ApiPresenter
         return [
             'id' => $comment->id,
             'body' => $comment->body,
+            'kind' => $comment->kind ?: 'user',
             'createdAt' => self::date($comment->created_at),
             'editedAt' => self::date($comment->edited_at),
             'replyToId' => $comment->reply_to_id,
