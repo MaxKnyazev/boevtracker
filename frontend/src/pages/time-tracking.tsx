@@ -30,7 +30,7 @@ import {
 } from '@/lib/shift-view';
 import { PaginationControls } from '@/components/pagination-controls';
 import { usePagination } from '@/hooks/use-pagination';
-import { paginateList } from '@/lib/pagination';
+import { paginateList, PAGINATION_PAGE_SIZE_KEYS } from '@/lib/pagination';
 
 const STATUS_LABELS: Record<WorkShiftStatus, string> = {
   active: 'Активна',
@@ -148,7 +148,10 @@ export function TimeTrackingPage() {
     [shifts, view],
   );
 
-  const { page, setPage, pageSize, setPageSize } = usePagination([view]);
+  const { page, setPage, pageSize, setPageSize } = usePagination(
+    PAGINATION_PAGE_SIZE_KEYS.timeTracking,
+    [view],
+  );
   const shiftPage = useMemo(
     () => paginateList(visibleShifts, page, pageSize),
     [visibleShifts, page, pageSize],

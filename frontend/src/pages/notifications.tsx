@@ -46,7 +46,7 @@ import {
 } from '@/lib/browser-notifications';
 import { cn } from '@/lib/utils';
 import { usePagination } from '@/hooks/use-pagination';
-import { paginateList } from '@/lib/pagination';
+import { paginateList, PAGINATION_PAGE_SIZE_KEYS } from '@/lib/pagination';
 
 const TYPE_META: Record<
   AppNotificationType,
@@ -485,7 +485,10 @@ export function NotificationsPage() {
     return items;
   }, [items, feedFilter]);
 
-  const { page, setPage, pageSize, setPageSize } = usePagination([feedFilter]);
+  const { page, setPage, pageSize, setPageSize } = usePagination(
+    PAGINATION_PAGE_SIZE_KEYS.notifications,
+    [feedFilter],
+  );
   const notificationPage = useMemo(
     () => paginateList(filteredItems, page, pageSize),
     [filteredItems, page, pageSize],

@@ -21,7 +21,7 @@ import { PRIORITY_LABELS, formatDate, formatDuration, cn } from '@/lib/utils';
 import { AssigneeStack } from '@/components/assignee-stack';
 import { PaginationControls } from '@/components/pagination-controls';
 import { usePagination } from '@/hooks/use-pagination';
-import { paginateList } from '@/lib/pagination';
+import { paginateList, PAGINATION_PAGE_SIZE_KEYS } from '@/lib/pagination';
 
 const priorityColor: Record<string, string> = {
   LOW: 'border-slate-500/40 text-slate-600 dark:text-slate-300',
@@ -121,7 +121,10 @@ export function TasksPage() {
     [tasks, view],
   );
 
-  const { page, setPage, pageSize, setPageSize } = usePagination([view]);
+  const { page, setPage, pageSize, setPageSize } = usePagination(
+    PAGINATION_PAGE_SIZE_KEYS.tasks,
+    [view],
+  );
   const taskPage = useMemo(
     () => paginateList(visibleTasks, page, pageSize),
     [visibleTasks, page, pageSize],

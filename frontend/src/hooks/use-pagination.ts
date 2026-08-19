@@ -1,9 +1,22 @@
-import { useEffect, useState } from 'react';
-import { DEFAULT_PAGE_SIZE } from '@/lib/pagination';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  readStoredPageSize,
+  writeStoredPageSize,
+} from '@/lib/pagination';
 
-export function usePagination(resetDeps: unknown[] = []) {
+export function usePagination(storageKey: string, resetDeps: unknown[] = []) {
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [pageSize, setPageSizeState] = useState(() =>
+    readStoredPageSize(storageKey),
+  );
+
+  const setPageSize = useCallback(
+    (next: number) => {
+      setPageSizeState(next);
+      writeStoredPageSize(storageKey, next);
+    },
+    [storageKey],
+  );
 
   useEffect(() => {
     setPage(1);

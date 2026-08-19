@@ -9,7 +9,7 @@ import { ROLE_LABELS } from '@/lib/utils';
 import { UserAvatar, displayName } from '@/components/user-avatar';
 import { UserPreviewDialog } from '@/components/user-preview-dialog';
 import { usePagination } from '@/hooks/use-pagination';
-import { paginateList } from '@/lib/pagination';
+import { paginateList, PAGINATION_PAGE_SIZE_KEYS } from '@/lib/pagination';
 
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: 'ADMIN', label: ROLE_LABELS.ADMIN },
@@ -44,8 +44,14 @@ export function UsersPage() {
   const pending = users.filter((u) => u.role === 'PENDING');
   const active = users.filter((u) => u.role !== 'PENDING');
 
-  const pendingPagination = usePagination([pending.length]);
-  const activePagination = usePagination([active.length]);
+  const pendingPagination = usePagination(
+    PAGINATION_PAGE_SIZE_KEYS.usersPending,
+    [pending.length],
+  );
+  const activePagination = usePagination(
+    PAGINATION_PAGE_SIZE_KEYS.usersActive,
+    [active.length],
+  );
 
   const pendingPage = useMemo(
     () => paginateList(pending, pendingPagination.page, pendingPagination.pageSize),
