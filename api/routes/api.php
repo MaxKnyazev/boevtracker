@@ -19,6 +19,7 @@ Route::get('/health', fn () => response()->json(['ok' => true]));
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/refresh', [AuthController::class, 'refresh']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me'])->middleware(AuthenticateJwt::class);
 });

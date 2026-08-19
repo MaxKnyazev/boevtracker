@@ -11,6 +11,9 @@ use Symfony\Component\HttpFoundation\Cookie;
 
 abstract class Controller
 {
+    protected const ACCESS_TOKEN_TTL_MINUTES = 60 * 12; // 12 hours
+    protected const REFRESH_TOKEN_TTL_MINUTES = 60 * 24 * 30; // 30 days
+
     protected function user(Request $request): User
     {
         return $request->attributes->get('authUser');
@@ -21,7 +24,22 @@ abstract class Controller
         return cookie(
             Constants::COOKIE_NAME,
             $token,
-            60 * 24 * 7,
+            self::ACCESS_TOKEN_TTL_MINUTES,
+            '/',
+            null,
+            app()->environment('production'),
+            true,
+            false,
+            'Lax'
+        );
+    }
+
+    protected function refreshAuthCookie(string $token): Cookie
+    {
+        return cookie(
+            Constants::REFRESH_COOKIE_NAME,
+            $token,
+            self::REFRESH_TOKEN_TTL_MINUTES,
             '/',
             null,
             app()->environment('production'),
@@ -35,6 +53,21 @@ abstract class Controller
     {
         return cookie(
             Constants::COOKIE_NAME,
+            '',
+            -1,
+            '/',
+            null,
+            app()->environment('production'),
+            true,
+            false,
+            'Lax'
+        );
+    }
+
+    protected function clearRefreshAuthCookie(): Cookie
+    {
+        return cookie(
+            Constants::REFRESH_COOKIE_NAME,
             '',
             -1,
             '/',
@@ -66,6 +99,21 @@ abstract class Controller
 
     protected function issueToken(User $user): string
     {
-        return JwtToken::sign($user->id, $user->role);
+        return JwtToken::sign(
+            $user->id,
+            $user->role,
+            self::ACCESS_TOKEN_TTL_MINUTES * 60,
+            'access'
+        );
+    }
+
+    protected function issueRefreshToken(User $user): string
+    {
+        return JwtToken::sign(
+            $user->id,
+            $user->role,
+            self::REFRESH_TOKEN_TTL_MINUTES * 60,
+            'refresh'
+        );
     }
 }

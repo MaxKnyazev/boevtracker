@@ -20,6 +20,9 @@ class AuthenticateJwt
 
         try {
             $payload = JwtToken::verify($token);
+            if (($payload['type'] ?? 'access') !== 'access') {
+                return response()->json(['error' => 'Недействительный токен'], 401);
+            }
             $user = User::query()->find($payload['userId']);
             if (! $user) {
                 return response()->json(['error' => 'Пользователь не найден'], 401);

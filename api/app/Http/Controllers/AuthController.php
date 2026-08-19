@@ -52,10 +52,12 @@ class AuthController extends Controller
         ]);
 
         $token = $this->issueToken($user);
+        $refreshToken = $this->issueRefreshToken($user);
 
         return response()
             ->json(['user' => ApiPresenter::user($user)], 201)
-            ->withCookie($this->authCookie($token));
+            ->withCookie($this->authCookie($token))
+            ->withCookie($this->refreshAuthCookie($refreshToken));
     }
 
     public function login(Request $request): JsonResponse
@@ -74,17 +76,55 @@ class AuthController extends Controller
         }
 
         $token = $this->issueToken($user);
+        $refreshToken = $this->issueRefreshToken($user);
 
         return response()
             ->json(['user' => ApiPresenter::user($user)])
-            ->withCookie($this->authCookie($token));
+            ->withCookie($this->authCookie($token))
+            ->withCookie($this->refreshAuthCookie($refreshToken));
     }
 
     public function logout(): JsonResponse
     {
         return response()
             ->json(['ok' => true])
-            ->withCookie($this->clearAuthCookie());
+            ->withCookie($this->clearAuthCookie())
+            ->withCookie($this->clearRefreshAuthCookie());
+    }
+
+    public function refresh(Request $request): JsonResponse
+    {
+        $refreshToken = $request->cookie(Constants::REFRESH_COOKIE_NAME);
+        if (! $refreshToken) {
+            return response()
+                ->json(['error' => 'Не авторизован'], 401)
+                ->withCookie($this->clearAuthCookie())
+                ->withCookie($this->clearRefreshAuthCookie());
+        }
+
+        try {
+            $payload = \App\Support\JwtToken::verify($refreshToken);
+            if (($payload['type'] ?? 'access') !== 'refresh') {
+                throw new \RuntimeException('Invalid token type');
+            }
+            $user = User::query()->find($payload['userId']);
+            if (! $user) {
+                throw new \RuntimeException('User not found');
+            }
+        } catch (\Throwable) {
+            return response()
+                ->json(['error' => 'Недействительный токен'], 401)
+                ->withCookie($this->clearAuthCookie())
+                ->withCookie($this->clearRefreshAuthCookie());
+        }
+
+        $token = $this->issueToken($user);
+        $nextRefreshToken = $this->issueRefreshToken($user);
+
+        return response()
+            ->json(['ok' => true])
+            ->withCookie($this->authCookie($token))
+            ->withCookie($this->refreshAuthCookie($nextRefreshToken));
     }
 
     public function me(Request $request): JsonResponse

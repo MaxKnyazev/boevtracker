@@ -8,19 +8,25 @@ use Firebase\JWT\Key;
 
 class JwtToken
 {
-    public static function sign(int $userId, string $role): string
+    public static function sign(
+        int $userId,
+        string $role,
+        int $ttlSeconds = 60 * 60 * 24 * 7,
+        string $tokenType = 'access'
+    ): string
     {
         $payload = [
             'userId' => $userId,
             'role' => $role,
+            'type' => $tokenType,
             'iat' => time(),
-            'exp' => time() + 60 * 60 * 24 * 7,
+            'exp' => time() + $ttlSeconds,
         ];
 
         return JWT::encode($payload, self::secret(), 'HS256');
     }
 
-    /** @return array{userId: int, role: string} */
+    /** @return array{userId: int, role: string, type: string, exp: int} */
     public static function verify(string $token): array
     {
         $decoded = JWT::decode($token, new Key(self::secret(), 'HS256'));
@@ -28,6 +34,8 @@ class JwtToken
         return [
             'userId' => (int) $decoded->userId,
             'role' => (string) $decoded->role,
+            'type' => isset($decoded->type) ? (string) $decoded->type : 'access',
+            'exp' => (int) $decoded->exp,
         ];
     }
 
