@@ -25,6 +25,7 @@ import {
   type NotificationSubscription,
 } from '@/lib/api';
 import { EmptyState, PageHeader } from '@/components/layout';
+import { PaginationControls } from '@/components/pagination-controls';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -44,6 +45,8 @@ import {
   unlockNotificationAudio,
 } from '@/lib/browser-notifications';
 import { cn } from '@/lib/utils';
+import { usePagination } from '@/hooks/use-pagination';
+import { paginateList } from '@/lib/pagination';
 
 const TYPE_META: Record<
   AppNotificationType,
@@ -482,6 +485,12 @@ export function NotificationsPage() {
     return items;
   }, [items, feedFilter]);
 
+  const { page, setPage, pageSize, setPageSize } = usePagination([feedFilter]);
+  const notificationPage = useMemo(
+    () => paginateList(filteredItems, page, pageSize),
+    [filteredItems, page, pageSize],
+  );
+
   return (
     <div>
       <PageHeader
@@ -740,7 +749,7 @@ export function NotificationsPage() {
         />
       ) : (
         <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-          {filteredItems.map((n) => {
+          {notificationPage.items.map((n) => {
             const meta = TYPE_META[n.type] ?? TYPE_META.mention;
             const Icon = meta.icon;
             const unread = !n.readAt;
@@ -805,6 +814,16 @@ export function NotificationsPage() {
             );
           })}
         </div>
+      )}
+
+      {!loading && filteredItems.length > 0 && (
+        <PaginationControls
+          result={notificationPage}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       )}
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>

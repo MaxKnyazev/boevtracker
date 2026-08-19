@@ -28,6 +28,9 @@ import {
   type ShiftSortField,
   type ShiftViewState,
 } from '@/lib/shift-view';
+import { PaginationControls } from '@/components/pagination-controls';
+import { usePagination } from '@/hooks/use-pagination';
+import { paginateList } from '@/lib/pagination';
 
 const STATUS_LABELS: Record<WorkShiftStatus, string> = {
   active: 'Активна',
@@ -143,6 +146,12 @@ export function TimeTrackingPage() {
   const visibleShifts = useMemo(
     () => applyShiftView(shifts, view),
     [shifts, view],
+  );
+
+  const { page, setPage, pageSize, setPageSize } = usePagination([view]);
+  const shiftPage = useMemo(
+    () => paginateList(visibleShifts, page, pageSize),
+    [visibleShifts, page, pageSize],
   );
 
   const cycleSort = (field: ShiftSortField) => {
@@ -275,7 +284,7 @@ export function TimeTrackingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleShifts.map((shift) => {
+                  {shiftPage.items.map((shift) => {
                     const totals = shiftTotals(shift);
                     return (
                       <tr
@@ -345,9 +354,13 @@ export function TimeTrackingPage() {
           )}
 
           {!loading && visibleShifts.length > 0 && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Показано {visibleShifts.length} из {shifts.length}
-            </p>
+            <PaginationControls
+              result={shiftPage}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
           )}
         </>
       ) : loading ? (
