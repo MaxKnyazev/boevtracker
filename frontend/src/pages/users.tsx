@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, type Role, type User } from '@/lib/api';
 import { PageHeader, EmptyState } from '@/components/layout';
+import { PaginationControls } from '@/components/pagination-controls';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AppSelect } from '@/components/ui/select';
 import { ROLE_LABELS } from '@/lib/utils';
 import { UserAvatar, displayName } from '@/components/user-avatar';
 import { UserPreviewDialog } from '@/components/user-preview-dialog';
+import { usePagination } from '@/hooks/use-pagination';
+import { paginateList } from '@/lib/pagination';
 
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: 'ADMIN', label: ROLE_LABELS.ADMIN },
@@ -40,6 +43,18 @@ export function UsersPage() {
 
   const pending = users.filter((u) => u.role === 'PENDING');
   const active = users.filter((u) => u.role !== 'PENDING');
+
+  const pendingPagination = usePagination([pending.length]);
+  const activePagination = usePagination([active.length]);
+
+  const pendingPage = useMemo(
+    () => paginateList(pending, pendingPagination.page, pendingPagination.pageSize),
+    [pending, pendingPagination.page, pendingPagination.pageSize],
+  );
+  const activePage = useMemo(
+    () => paginateList(active, activePagination.page, activePagination.pageSize),
+    [active, activePagination.page, activePagination.pageSize],
+  );
 
   const approve = async (id: number, role: Role) => {
     await api.approveUser(id, role);
@@ -77,7 +92,7 @@ export function UsersPage() {
               />
             ) : (
               <div className="space-y-3">
-                {pending.map((u) => (
+                {pendingPage.items.map((u) => (
                   <UserRow
                     key={u.id}
                     user={u}
@@ -107,12 +122,27 @@ export function UsersPage() {
                 ))}
               </div>
             )}
+            {pending.length > 0 && (
+              <PaginationControls
+                result={pendingPage}
+                page={pendingPagination.page}
+                pageSize={pendingPagination.pageSize}
+                onPageChange={pendingPagination.setPage}
+                onPageSizeChange={pendingPagination.setPageSize}
+              />
+            )}
           </section>
 
           <section>
             <h2 className="mb-3 text-lg font-medium">Активные пользователи</h2>
-            <div className="space-y-3">
-              {active.map((u) => (
+            {active.length === 0 ? (
+              <EmptyState
+                title="Нет активных пользователей"
+                description="Подтверждённые пользователи появятся здесь"
+              />
+            ) : (
+              <div className="space-y-3">
+                {activePage.items.map((u) => (
                 <UserRow
                   key={u.id}
                   user={u}
@@ -123,8 +153,18 @@ export function UsersPage() {
                     onChange={(role) => changeRole(u.id, role)}
                   />
                 </UserRow>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
+            {active.length > 0 && (
+              <PaginationControls
+                result={activePage}
+                page={activePagination.page}
+                pageSize={activePagination.pageSize}
+                onPageChange={activePagination.setPage}
+                onPageSizeChange={activePagination.setPageSize}
+              />
+            )}
           </section>
         </div>
       )}

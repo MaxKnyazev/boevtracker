@@ -35,7 +35,6 @@ class NotificationController extends Controller
         } else {
             $notifications = (clone $base)
                 ->orderByDesc('id')
-                ->limit(100)
                 ->get();
         }
 

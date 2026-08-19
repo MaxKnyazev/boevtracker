@@ -19,6 +19,9 @@ import {
 } from '@/lib/task-view';
 import { PRIORITY_LABELS, formatDate, formatDuration, cn } from '@/lib/utils';
 import { AssigneeStack } from '@/components/assignee-stack';
+import { PaginationControls } from '@/components/pagination-controls';
+import { usePagination } from '@/hooks/use-pagination';
+import { paginateList } from '@/lib/pagination';
 
 const priorityColor: Record<string, string> = {
   LOW: 'border-slate-500/40 text-slate-600 dark:text-slate-300',
@@ -116,6 +119,12 @@ export function TasksPage() {
   const visibleTasks = useMemo(
     () => applyTaskView(tasks, view),
     [tasks, view],
+  );
+
+  const { page, setPage, pageSize, setPageSize } = usePagination([view]);
+  const taskPage = useMemo(
+    () => paginateList(visibleTasks, page, pageSize),
+    [visibleTasks, page, pageSize],
   );
 
   const openTask = async (task: Task) => {
@@ -249,7 +258,7 @@ export function TasksPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleTasks.map((task) => (
+              {taskPage.items.map((task) => (
                 <tr
                   key={task.id}
                   className="cursor-pointer border-b border-border/70 transition-colors hover:bg-accent/40"
@@ -347,9 +356,13 @@ export function TasksPage() {
       )}
 
       {!loading && visibleTasks.length > 0 && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Показано {visibleTasks.length} из {tasks.length}
-        </p>
+        <PaginationControls
+          result={taskPage}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       )}
 
       {selectedTaskId != null && (
