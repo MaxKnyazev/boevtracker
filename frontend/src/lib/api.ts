@@ -235,9 +235,37 @@ export type Board = {
   };
 };
 
+let refreshRequestPromise: Promise<boolean> | null = null;
+
+function canRetryWithRefresh(path: string): boolean {
+  return !path.startsWith('/api/auth/login') &&
+    !path.startsWith('/api/auth/register') &&
+    !path.startsWith('/api/auth/logout') &&
+    !path.startsWith('/api/auth/refresh');
+}
+
+async function tryRefreshSession(): Promise<boolean> {
+  if (refreshRequestPromise) return refreshRequestPromise;
+  refreshRequestPromise = (async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      refreshRequestPromise = null;
+    }
+  })();
+  return refreshRequestPromise;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
+  opts: { allowRefreshRetry?: boolean } = {},
 ): Promise<T> {
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> | undefined),
@@ -252,6 +280,17 @@ async function request<T>(
     credentials: 'include',
     headers,
   });
+
+  if (
+    res.status === 401 &&
+    opts.allowRefreshRetry !== false &&
+    canRetryWithRefresh(path)
+  ) {
+    const refreshed = await tryRefreshSession();
+    if (refreshed) {
+      return request<T>(path, options, { allowRefreshRetry: false });
+    }
+  }
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

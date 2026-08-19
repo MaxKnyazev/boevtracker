@@ -38,4 +38,5 @@ class Constants
     public const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
     public const COOKIE_NAME = 'bt_token';
+    public const REFRESH_COOKIE_NAME = 'bt_refresh_token';
 }
