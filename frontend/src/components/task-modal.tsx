@@ -2050,6 +2050,14 @@ function ChatImage({
   );
 }
 
+const LIGHTBOX_MIN_ZOOM = 1;
+const LIGHTBOX_MAX_ZOOM = 8;
+const LIGHTBOX_ZOOM_STEP = 1.25;
+
+function clampLightboxZoom(value: number) {
+  return Math.min(LIGHTBOX_MAX_ZOOM, Math.max(LIGHTBOX_MIN_ZOOM, value));
+}
+
 function ImageLightbox({
   file,
   onClose,
@@ -2059,20 +2067,111 @@ function ImageLightbox({
 }) {
   const previewUrl = useAuthObjectUrl(file.id, true);
   const [downloading, setDownloading] = useState(false);
+  const [scale, setScale] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const scaleRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    panX: number;
+    panY: number;
+  } | null>(null);
+  const movedRef = useRef(false);
+  const clickTimerRef = useRef<number | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  scaleRef.current = scale;
+  panRef.current = pan;
+
+  const clearClickTimer = () => {
+    if (clickTimerRef.current == null) return;
+    window.clearTimeout(clickTimerRef.current);
+    clickTimerRef.current = null;
+  };
+
+  const resetView = () => {
+    setScale(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const zoomToward = (nextScale: number, clientX?: number, clientY?: number) => {
+    const clamped = clampLightboxZoom(nextScale);
+    const current = scaleRef.current;
+    if (clamped === current) return;
+    if (clamped === 1) {
+      resetView();
+      return;
+    }
+
+    const viewport = viewportRef.current;
+    const currentPan = panRef.current;
+    if (!viewport || clientX == null || clientY == null) {
+      setScale(clamped);
+      return;
+    }
+
+    const rect = viewport.getBoundingClientRect();
+    const cx = clientX - rect.left - rect.width / 2;
+    const cy = clientY - rect.top - rect.height / 2;
+    const ox = (cx - currentPan.x) / current;
+    const oy = (cy - currentPan.y) / current;
+    setScale(clamped);
+    setPan({
+      x: cx - ox * clamped,
+      y: cy - oy * clamped,
+    });
+  };
+
+  useEffect(() => {
+    resetView();
+  }, [file.id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      onCloseRef.current();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        zoomToward(scaleRef.current * LIGHTBOX_ZOOM_STEP);
+        return;
+      }
+      if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        zoomToward(scaleRef.current / LIGHTBOX_ZOOM_STEP);
+        return;
+      }
+      if (e.key === '0') {
+        e.preventDefault();
+        resetView();
+      }
     };
     window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      clearClickTimer();
+    };
   }, []);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const factor = e.deltaY < 0 ? LIGHTBOX_ZOOM_STEP : 1 / LIGHTBOX_ZOOM_STEP;
+      zoomToward(scaleRef.current * factor, e.clientX, e.clientY);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [previewUrl]);
 
   const onDownload = async () => {
     setDownloading(true);
@@ -2083,6 +2182,59 @@ function ImageLightbox({
     } finally {
       setDownloading(false);
     }
+  };
+
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    movedRef.current = false;
+    if (scaleRef.current <= 1) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      panX: panRef.current.x,
+      panY: panRef.current.y,
+    };
+  };
+
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    if (
+      Math.abs(e.clientX - drag.startX) > 4 ||
+      Math.abs(e.clientY - drag.startY) > 4
+    ) {
+      movedRef.current = true;
+    }
+    setPan({
+      x: drag.panX + (e.clientX - drag.startX),
+      y: drag.panY + (e.clientY - drag.startY),
+    });
+  };
+
+  const endDrag = (e: PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  const onViewportClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (movedRef.current || e.detail !== 1) return;
+    const { clientX, clientY } = e;
+    clearClickTimer();
+    clickTimerRef.current = window.setTimeout(() => {
+      clickTimerRef.current = null;
+      zoomToward(scaleRef.current * LIGHTBOX_ZOOM_STEP, clientX, clientY);
+    }, 250);
+  };
+
+  const onDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    clearClickTimer();
+    resetView();
   };
 
   return createPortal(
@@ -2101,12 +2253,62 @@ function ImageLightbox({
       aria-label={file.originalName}
     >
       <div
-        className="relative flex max-h-[90vh] max-w-[min(960px,94vw)] flex-col gap-3"
+        className="relative flex h-[90vh] w-[min(1200px,96vw)] max-w-[96vw] flex-col gap-3"
         onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 text-sm text-white">
           <span className="min-w-0 truncate font-medium">{file.originalName}</span>
           <div className="flex shrink-0 items-center gap-1">
+            <div className="mr-1 flex items-center gap-0.5">
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className="h-8 w-8 cursor-pointer"
+                disabled={scale <= LIGHTBOX_MIN_ZOOM}
+                title="Уменьшить"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  zoomToward(scale / LIGHTBOX_ZOOM_STEP);
+                }}
+              >
+                <Minus className="h-4 w-4" />
+              </Button>
+              <span className="min-w-[3.25rem] text-center tabular-nums text-xs text-white/90">
+                {Math.round(scale * 100)}%
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className="h-8 w-8 cursor-pointer"
+                disabled={scale >= LIGHTBOX_MAX_ZOOM}
+                title="Увеличить"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  zoomToward(scale * LIGHTBOX_ZOOM_STEP);
+                }}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className="h-8 w-8 cursor-pointer"
+                disabled={scale === 1 && pan.x === 0 && pan.y === 0}
+                title="Сбросить масштаб"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  resetView();
+                }}
+              >
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            </div>
             <Button
               type="button"
               variant="secondary"
@@ -2138,17 +2340,42 @@ function ImageLightbox({
             </Button>
           </div>
         </div>
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl bg-black/40">
+        <div
+          ref={viewportRef}
+          className={cn(
+            'relative min-h-0 flex-1 overflow-hidden rounded-xl bg-black/40',
+            scale > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in',
+          )}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onClick={onViewportClick}
+          onDoubleClick={onDoubleClick}
+        >
           {previewUrl ? (
-            <img
-              src={previewUrl}
-              alt={file.originalName}
-              className="max-h-[80vh] max-w-full object-contain"
-            />
+            <div className="flex h-full w-full items-center justify-center">
+              <img
+                src={previewUrl}
+                alt={file.originalName}
+                draggable={false}
+                className="max-h-full max-w-full select-none object-contain"
+                style={{
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
+                  transformOrigin: 'center center',
+                }}
+              />
+            </div>
           ) : (
-            <div className="px-8 py-16 text-sm text-white/70">Загрузка...</div>
+            <div className="flex h-full items-center justify-center px-8 py-16 text-sm text-white/70">
+              Загрузка...
+            </div>
           )}
         </div>
+        <p className="text-center text-[11px] text-white/60">
+          ЛКМ — увеличить, двойной клик — сбросить. Колёсико тоже меняет
+          масштаб, при увеличении фото можно перетаскивать.
+        </p>
       </div>
     </div>,
     document.body,
