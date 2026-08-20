@@ -27,6 +27,7 @@ import { EmptyState } from '@/components/layout';
 import type { PublicUser, WorkShift, WorkShiftStatus } from '@/lib/api';
 import { cn, formatDateTime, formatSeconds } from '@/lib/utils';
 import {
+  applyCalendarMonthClick,
   applyCalendarRangeClick,
   applySummaryPeriodKind,
   buildPeriodSummary,
@@ -163,8 +164,15 @@ export function ShiftPeriodSummary({
   }, [period.customFrom]);
 
   const summary = useMemo(
-    () => buildPeriodSummary(shifts, range, period.user),
-    [shifts, range, period.user],
+    () =>
+      buildPeriodSummary(
+        shifts,
+        range,
+        period.user,
+        Date.now(),
+        period.completedOnly,
+      ),
+    [shifts, range, period.user, period.completedOnly],
   );
 
   const chartData = useMemo(
@@ -236,6 +244,12 @@ export function ShiftPeriodSummary({
     const next = applyCalendarRangeClick(period, day, rangeStart);
     setPeriod(next.state);
     setRangeStart(next.startDay);
+  };
+
+  const handleMonthCaptionClick = (month: Date) => {
+    setPeriod((current) => applyCalendarMonthClick(current, month));
+    setRangeStart(null);
+    setVisibleMonth(startOfMonth(month));
   };
 
   const handleMonthChange = (month: Date) => {
@@ -337,6 +351,16 @@ export function ShiftPeriodSummary({
               className="w-[13rem] text-xs"
             />
           </label>
+
+          <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
+              checked={period.completedOnly}
+              onChange={(e) => patch({ completedOnly: e.target.checked })}
+            />
+            <span>Только закрытые смены</span>
+          </label>
         </div>
       </div>
 
@@ -352,6 +376,7 @@ export function ShiftPeriodSummary({
               selected={selectedRange}
               month={visibleMonth}
               onMonthChange={handleMonthChange}
+              onMonthCaptionClick={handleMonthCaptionClick}
               numberOfMonths={1}
               weekStartsOn={1}
               onSelect={() => {}}

@@ -31,6 +31,8 @@ export type SummaryPeriodState = {
   customTo: string;
   /** 'all' | user id */
   user: string;
+  /** When true, only completed shifts are included in the summary. */
+  completedOnly: boolean;
 };
 
 export type SummaryRange = {
@@ -75,6 +77,7 @@ export function defaultSummaryPeriod(now = new Date()): SummaryPeriodState {
   return {
     kind: 'week',
     user: 'all',
+    completedOnly: false,
     ...periodBoundsForKind('week', now),
   };
 }
@@ -220,13 +223,32 @@ export function applyCalendarRangeClick(
   };
 }
 
+export function applyCalendarMonthClick(
+  state: SummaryPeriodState,
+  month: Date,
+): SummaryPeriodState {
+  const from = startOfMonth(month);
+  const to = endOfMonth(month);
+  return {
+    ...state,
+    kind: 'custom',
+    customFrom: toDateKey(from),
+    customTo: toDateKey(to),
+    anchor: toDateKey(from),
+  };
+}
+
 /** Shifts that started inside [from, to]. */
 export function shiftsInRange(
   shifts: WorkShift[],
   range: SummaryRange,
   userFilter: string,
+  completedOnly = false,
 ): WorkShift[] {
   return shifts.filter((shift) => {
+    if (completedOnly && shift.status !== 'completed') {
+      return false;
+    }
     if (userFilter !== 'all' && shift.userId !== Number(userFilter)) {
       return false;
     }
@@ -264,8 +286,9 @@ export function buildPeriodSummary(
   range: SummaryRange,
   userFilter: string,
   nowMs = Date.now(),
+  completedOnly = false,
 ): PeriodShiftSummary {
-  const inRange = shiftsInRange(shifts, range, userFilter);
+  const inRange = shiftsInRange(shifts, range, userFilter, completedOnly);
   let withBreaks = 0;
   let withoutBreaks = 0;
   let pauseSeconds = 0;

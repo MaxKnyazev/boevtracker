@@ -1,18 +1,23 @@
 import { DayPicker, type DayPickerProps } from 'react-day-picker';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { format, startOfMonth } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
 
 import 'react-day-picker/style.css';
 
-export type CalendarProps = DayPickerProps;
+export type CalendarProps = DayPickerProps & {
+  onMonthCaptionClick?: (month: Date) => void;
+};
 
 export function Calendar({
   className,
   classNames,
   showOutsideDays = true,
   navLayout = 'around',
+  onMonthCaptionClick,
+  components,
   ...props
 }: CalendarProps) {
   return (
@@ -28,8 +33,12 @@ export function Calendar({
           'grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-y-2',
         month_caption:
           'col-start-2 row-start-1 flex items-center justify-center px-1',
-        caption_label:
-          'pointer-events-none text-center text-sm font-medium',
+        caption_label: cn(
+          onMonthCaptionClick
+            ? 'cursor-pointer rounded-md px-2 py-0.5 text-center text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground'
+            : 'pointer-events-none text-center text-sm font-medium',
+          classNames?.caption_label,
+        ),
         button_previous: cn(
           buttonVariants({ variant: 'ghost', size: 'icon' }),
           'col-start-1 row-start-1 h-8 w-8 shrink-0 rounded-lg opacity-70 hover:opacity-100',
@@ -69,6 +78,32 @@ export function Calendar({
           ) : (
             <ChevronRight className="h-4 w-4" />
           ),
+        ...(onMonthCaptionClick
+          ? {
+              MonthCaption: ({
+                calendarMonth,
+                className: captionClassName,
+                ...captionProps
+              }) => (
+                <div className={captionClassName} {...captionProps}>
+                  <button
+                    type="button"
+                    className={cn(
+                      buttonVariants({ variant: 'ghost' }),
+                      'h-auto px-2 py-0.5 text-sm font-medium',
+                    )}
+                    title="Выбрать весь месяц"
+                    onClick={() =>
+                      onMonthCaptionClick(startOfMonth(calendarMonth.date))
+                    }
+                  >
+                    {format(calendarMonth.date, 'LLLL yyyy', { locale: ru })}
+                  </button>
+                </div>
+              ),
+            }
+          : {}),
+        ...components,
       }}
       {...props}
     />

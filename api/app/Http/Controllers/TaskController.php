@@ -360,6 +360,8 @@ class TaskController extends Controller
                 $task,
                 $toStatus,
                 $this->workIntervals->resolveWorkerUserId($task, $activeId),
+                null,
+                null,
             );
         }
 
@@ -555,7 +557,8 @@ class TaskController extends Controller
                         ? ($update['active_assignee_id'] !== null ? (int) $update['active_assignee_id'] : null)
                         : $activeForStatus,
                 );
-                $this->workIntervals->onStatusChange($task, $toStatus, $worker);
+                $fromStatus = ProjectStatus::query()->find($fromStatusId);
+                $this->workIntervals->onStatusChange($task, $toStatus, $worker, null, $fromStatus);
             }
         } else {
             $nextActiveId = $task->active_assignee_id !== null
@@ -744,7 +747,13 @@ class TaskController extends Controller
                 $task,
                 $activeForStatus,
             );
-            $this->workIntervals->onStatusChange($task, $status, $worker);
+            $this->workIntervals->onStatusChange(
+                $task,
+                $status,
+                $worker,
+                null,
+                ProjectStatus::query()->find($fromStatusId),
+            );
         }
 
         $this->broadcastTaskUpdated((int) $id);
@@ -811,7 +820,8 @@ class TaskController extends Controller
             $toStatus = $task->status ?? ProjectStatus::query()->find($toStatusId);
             if ($toStatus) {
                 $worker = $this->workIntervals->resolveWorkerUserId($task);
-                $this->workIntervals->onStatusChange($task, $toStatus, $worker);
+                $fromStatus = ProjectStatus::query()->find($fromStatusId);
+                $this->workIntervals->onStatusChange($task, $toStatus, $worker, null, $fromStatus);
             }
         }
 
