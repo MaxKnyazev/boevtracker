@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Crop, ImagePlus, Trash2 } from 'lucide-react';
+import { ChevronDown, Crop, ImagePlus, Play, Trash2, Upload } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AVATAR_COLORS } from '@/lib/avatar-colors';
 import { useAuthStore } from '@/store/auth';
@@ -13,6 +13,25 @@ import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
 import { ROLE_LABELS, cn } from '@/lib/utils';
 import type { CropTransform } from '@/lib/avatar-crop';
+import {
+  BUILTIN_SOUNDS,
+  CUSTOM_SOUND_ACCEPT,
+  fileToCustomSound,
+  playNotificationSound,
+  previewNotificationSound,
+  readNotificationSoundPreference,
+  unlockNotificationAudio,
+  writeNotificationSoundPreference,
+  type BuiltinSoundId,
+  type NotificationSoundPreference,
+} from '@/lib/notification-sound';
+
+function notificationSoundLabel(pref: NotificationSoundPreference): string {
+  if (pref.id === 'custom') {
+    return pref.customName?.trim() || 'Свой файл';
+  }
+  return BUILTIN_SOUNDS.find((s) => s.id === pref.id)?.label ?? 'Мелодия';
+}
 
 type CropSession =
   | { mode: 'upload'; file: File }
@@ -41,6 +60,12 @@ export function ProfilePage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [usedColors, setUsedColors] = useState<Set<string>>(() => new Set());
+  const [soundPref, setSoundPref] = useState<NotificationSoundPreference>(() =>
+    readNotificationSoundPreference(),
+  );
+  const [soundError, setSoundError] = useState('');
+  const [soundOpen, setSoundOpen] = useState(false);
+  const soundInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -160,6 +185,63 @@ export function ProfilePage() {
     }
   };
 
+  const saveSoundPreference = (next: NotificationSoundPreference) => {
+    setSoundPref(next);
+    writeNotificationSoundPreference(next);
+    setSoundError('');
+  };
+
+  const selectBuiltinSound = (id: BuiltinSoundId) => {
+    unlockNotificationAudio();
+    saveSoundPreference({
+      ...soundPref,
+      id,
+    });
+    previewNotificationSound(id);
+  };
+
+  const selectCustomSound = () => {
+    if (!soundPref.customDataUrl) {
+      soundInputRef.current?.click();
+      return;
+    }
+    unlockNotificationAudio();
+    saveSoundPreference({
+      ...soundPref,
+      id: 'custom',
+    });
+    previewNotificationSound('custom');
+  };
+
+  const onCustomSoundSelected = async (file: File | undefined) => {
+    if (!file) return;
+    setSoundError('');
+    try {
+      const { name, dataUrl } = await fileToCustomSound(file);
+      unlockNotificationAudio();
+      const next: NotificationSoundPreference = {
+        id: 'custom',
+        customName: name,
+        customDataUrl: dataUrl,
+      };
+      saveSoundPreference(next);
+      playNotificationSound(next);
+    } catch (err) {
+      setSoundError(err instanceof Error ? err.message : 'Ошибка загрузки');
+    } finally {
+      if (soundInputRef.current) soundInputRef.current.value = '';
+    }
+  };
+
+  const clearCustomSound = () => {
+    const next: NotificationSoundPreference = {
+      id: soundPref.id === 'custom' ? 'chime' : soundPref.id,
+      customName: null,
+      customDataUrl: null,
+    };
+    saveSoundPreference(next);
+  };
+
   if (!user) return null;
 
   const nameDirty =
@@ -171,7 +253,7 @@ export function ProfilePage() {
     <div className="mx-auto max-w-xl">
       <PageHeader
         title="Личный кабинет"
-        description="Имя, цвет и фото профиля"
+        description="Имя, цвет, фото и звук уведомлений"
       />
 
       {error && (
@@ -210,7 +292,7 @@ export function ProfilePage() {
                           : `Цвет ${color}`
                       }
                       className={cn(
-                        'relative h-8 w-8 rounded-full border-2 transition-transform hover:scale-105',
+                        'relative h-8 w-8 cursor-pointer rounded-full border-2 transition-transform hover:scale-105',
                         avatarColor === color
                           ? 'border-foreground ring-2 ring-ring ring-offset-2 ring-offset-background'
                           : 'border-transparent',
@@ -291,6 +373,169 @@ export function ProfilePage() {
         onCancel={() => setCropSession(null)}
         onConfirm={uploadCroppedAvatar}
       />
+
+      <section className="mb-6 overflow-hidden rounded-xl border border-border bg-card">
+        <button
+          type="button"
+          className="flex w-full cursor-pointer items-center justify-between gap-3 px-5 py-4 text-left"
+          aria-expanded={soundOpen}
+          onClick={() => setSoundOpen((v) => !v)}
+        >
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold">Звук уведомлений</h2>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              Сейчас: {notificationSoundLabel(soundPref)}
+            </p>
+          </div>
+          <ChevronDown
+            className={cn(
+              'h-5 w-5 shrink-0 text-muted-foreground transition-transform',
+              soundOpen && 'rotate-180',
+            )}
+          />
+        </button>
+        <div
+          className={cn(
+            'grid transition-[grid-template-rows] duration-300 ease-out',
+            soundOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+          )}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className="border-t border-border px-5 pb-5 pt-4">
+              <p className="mb-4 text-xs text-muted-foreground">
+                Выберите один из готовых звуков или загрузите свой файл. Выбор
+                сохранится на этом устройстве.
+              </p>
+
+              <div className="space-y-2">
+                {BUILTIN_SOUNDS.map((sound) => {
+                  const active = soundPref.id === sound.id;
+                  return (
+                    <div
+                      key={sound.id}
+                      className={cn(
+                        'flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors',
+                        active
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:bg-accent/40',
+                      )}
+                    >
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 cursor-pointer text-left"
+                        onClick={() => selectBuiltinSound(sound.id)}
+                      >
+                        <div className="text-sm font-medium">{sound.label}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {sound.description}
+                        </div>
+                      </button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        title="Прослушать"
+                        onClick={() => {
+                          unlockNotificationAudio();
+                          previewNotificationSound(sound.id);
+                        }}
+                      >
+                        <Play className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
+
+                <div
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors',
+                    soundPref.id === 'custom'
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:bg-accent/40',
+                  )}
+                >
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 cursor-pointer text-left"
+                    onClick={selectCustomSound}
+                  >
+                    <div className="text-sm font-medium">Свой файл</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {soundPref.customName
+                        ? soundPref.customName
+                        : 'MP3, WAV, OGG или WebM, до 512 КБ'}
+                    </div>
+                  </button>
+                  <input
+                    ref={soundInputRef}
+                    type="file"
+                    accept={CUSTOM_SOUND_ACCEPT}
+                    className="hidden"
+                    onChange={(e) =>
+                      void onCustomSoundSelected(e.target.files?.[0])
+                    }
+                  />
+                  {soundPref.customDataUrl ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        title="Прослушать"
+                        onClick={() => {
+                          unlockNotificationAudio();
+                          previewNotificationSound('custom');
+                        }}
+                      >
+                        <Play className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        title="Заменить файл"
+                        onClick={() => soundInputRef.current?.click()}
+                      >
+                        <Upload className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                        title="Удалить свой звук"
+                        onClick={clearCustomSound}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => soundInputRef.current?.click()}
+                    >
+                      <Upload className="h-4 w-4" />
+                      Загрузить
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {soundError && (
+                <p className="mt-3 text-sm text-destructive" role="alert">
+                  {soundError}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="rounded-xl border border-border bg-card p-5">
         <h2 className="mb-4 text-sm font-semibold">Профиль</h2>
