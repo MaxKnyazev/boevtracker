@@ -159,7 +159,7 @@ export function ShiftStatsDialog({
         ) : (
           <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
             <div className="flex flex-col items-center">
-              <div className="relative h-56 w-full max-w-[280px] [&_.recharts-wrapper]:outline-none [&_.recharts-surface]:outline-none [&_svg]:outline-none [&_*:focus]:outline-none [&_*:focus-visible]:outline-none">
+              <div className="h-56 w-full max-w-[280px] [&_.recharts-wrapper]:outline-none [&_.recharts-surface]:outline-none [&_svg]:outline-none [&_*:focus]:outline-none [&_*:focus-visible]:outline-none">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart style={{ outline: 'none' }}>
                     <Pie
@@ -198,12 +198,6 @@ export function ShiftStatsDialog({
                     </Pie>
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-                  <div className="text-xs text-muted-foreground">На задачах</div>
-                  <div className="text-base font-semibold tabular-nums">
-                    {formatSeconds(stats.totalSeconds)}
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -300,27 +294,26 @@ export function ShiftStatsDialog({
                     <ul className="space-y-1.5 text-sm">
                       {selectedTask.statuses.map((slice) => (
                         <li
-                          key={`${slice.user?.id ?? 'none'}-${slice.statusName}`}
-                          className="flex items-center justify-between gap-3"
+                          key={`${slice.user?.id ?? 'none'}-${slice.statusName}-${slice.toStatusName}`}
+                          className="flex items-start gap-2"
                         >
-                          <span className="flex min-w-0 items-center gap-2">
-                            <UserAvatar
-                              user={slice.user}
-                              size="sm"
-                              title={displayName(slice.user)}
-                            />
-                            <span className="min-w-0">
-                              <span className="block truncate text-muted-foreground">
-                                {slice.statusName}
-                              </span>
-                              <span className="block truncate text-[11px] text-muted-foreground/80">
-                                {displayName(slice.user)}
-                                {slice.isPeer ? ' · соавтор' : ''}
+                          <UserAvatar
+                            user={slice.user}
+                            size="sm"
+                            title={displayName(slice.user)}
+                            className="mt-0.5"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-muted-foreground">
+                              {slice.statusName} → {slice.toStatusName}{' '}
+                              <span className="text-foreground">
+                                за {formatSeconds(slice.seconds)}
                               </span>
                             </span>
-                          </span>
-                          <span className="shrink-0 tabular-nums font-medium">
-                            {formatSeconds(slice.seconds)}
+                            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground/80">
+                              {displayName(slice.user)}
+                              {slice.isPeer ? ' · соавтор' : ''}
+                            </span>
                           </span>
                         </li>
                       ))}

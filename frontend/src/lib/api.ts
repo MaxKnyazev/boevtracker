@@ -182,6 +182,7 @@ export type WorkShift = {
 
 export type ShiftStatsStatusSlice = {
   statusName: string;
+  toStatusName: string;
   seconds: number;
   user?: PublicUser | null;
   /** Co-author time: shown in «По статусам», excluded from pie / task totals. */

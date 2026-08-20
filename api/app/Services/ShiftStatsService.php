@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\TaskStatusHistory;
 use App\Models\TaskWorkInterval;
 use App\Models\WorkShift;
 use App\Support\ApiPresenter;
@@ -19,7 +20,7 @@ class ShiftStatsService
      *     title: string,
      *     project: array{id: int, name: string, boardId?: int}|null,
      *     totalSeconds: int,
-     *     statuses: list<array{statusName: string, seconds: int, user: ?array, isPeer: bool}>
+     *     statuses: list<array{statusName: string, toStatusName: string, seconds: int, user: ?array, isPeer: bool}>
      *   }>
      * }
      */
@@ -62,7 +63,7 @@ class ShiftStatsService
             ->orderBy('started_at')
             ->get();
 
-        /** @var array<int, array{taskId: int, title: string, project: ?array, totalSeconds: int, statusMap: array<string, array{statusName: string, seconds: int, user: ?array, isPeer: bool}>}> $byTask */
+        /** @var array<int, array{taskId: int, title: string, project: ?array, totalSeconds: int, statusMap: array<string, array{statusName: string, toStatusName: string, seconds: int, user: ?array, isPeer: bool}>}> $byTask */
         $byTask = [];
 
         foreach ($ownerIntervals as $interval) {
@@ -153,7 +154,7 @@ class ShiftStatsService
     }
 
     /**
-     * @param  array<int, array{taskId: int, title: string, project: ?array, totalSeconds: int, statusMap: array<string, array{statusName: string, seconds: int, user: ?array, isPeer: bool}>}>  $byTask
+     * @param  array<int, array{taskId: int, title: string, project: ?array, totalSeconds: int, statusMap: array<string, array{statusName: string, toStatusName: string, seconds: int, user: ?array, isPeer: bool}>}>  $byTask
      */
     private function ensureTaskBucket(array &$byTask, TaskWorkInterval $interval): void
     {
@@ -182,7 +183,7 @@ class ShiftStatsService
     }
 
     /**
-     * @param  array<string, array{statusName: string, seconds: int, user: ?array, isPeer: bool}>  $statusMap
+     * @param  array<string, array{statusName: string, toStatusName: string, seconds: int, user: ?array, isPeer: bool}>  $statusMap
      */
     private function addStatusSeconds(
         array &$statusMap,
@@ -190,15 +191,23 @@ class ShiftStatsService
         int $seconds,
         bool $isPeer = false,
     ): void {
+        // Only completed transitions: «статус → куда перенесли за время».
+        // Open stays (still in status) and Open→in-progress entry are not listed.
+        $toStatusName = $this->resolveToStatusName($interval);
+        if ($toStatusName === null) {
+            return;
+        }
+
         $statusName = $interval->status_name !== ''
             ? $interval->status_name
             : 'Без статуса';
         $userId = (int) $interval->user_id;
-        $key = $userId.'|'.$statusName;
+        $key = $userId.'|'.$statusName.'|'.$toStatusName;
 
         if (! isset($statusMap[$key])) {
             $statusMap[$key] = [
                 'statusName' => $statusName,
+                'toStatusName' => $toStatusName,
                 'seconds' => 0,
                 'user' => ApiPresenter::publicUser($interval->user),
                 'isPeer' => $isPeer,
@@ -206,6 +215,31 @@ class ShiftStatsService
         }
 
         $statusMap[$key]['seconds'] += $seconds;
+    }
+
+    private function resolveToStatusName(TaskWorkInterval $interval): ?string
+    {
+        if (is_string($interval->to_status_name) && $interval->to_status_name !== '') {
+            return $interval->to_status_name;
+        }
+
+        // Still open — time in current status is not a completed transition yet.
+        if ($interval->ended_at === null) {
+            return null;
+        }
+
+        // Assignee handoff / legacy rows: find the later leave from this status.
+        $history = TaskStatusHistory::query()
+            ->where('task_id', $interval->task_id)
+            ->where('from_status_name', $interval->status_name)
+            ->where('created_at', '>=', $interval->started_at)
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->first(['to_status_name']);
+
+        $name = $history?->to_status_name;
+
+        return is_string($name) && $name !== '' ? $name : null;
     }
 
     /**

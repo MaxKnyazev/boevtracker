@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ProjectStatus;
 use App\Models\Task;
+use App\Models\TaskStatusHistory;
 use App\Models\TaskWorkInterval;
 use App\Support\AppDateTime;
 use App\Support\TaskBuckets;
@@ -16,9 +17,11 @@ class TaskWorkIntervalService
         ProjectStatus $to,
         ?int $workerUserId,
         ?Carbon $at = null,
+        ?ProjectStatus $from = null,
     ): void {
         $at ??= AppDateTime::now();
-        $this->closeOpenIntervalsForTask((int) $task->id, $at);
+        // Closing records: spent time in previous status → moved to $to.
+        $this->closeOpenIntervalsForTask((int) $task->id, $at, $to->name);
 
         if ($workerUserId === null) {
             return;
@@ -29,7 +32,7 @@ class TaskWorkIntervalService
             return;
         }
 
-        $this->openInterval($task, $workerUserId, $to, $at);
+        $this->openInterval($task, $workerUserId, $to, $at, $from?->name);
     }
 
     public function onActiveAssigneeChange(
@@ -57,10 +60,17 @@ class TaskWorkIntervalService
             return;
         }
 
+        // Assignee handoff is not a status transition — leave to_status_name empty.
         $this->closeOpenIntervalsForTask((int) $task->id, $at);
 
         if ($nextUserId !== null) {
-            $this->openInterval($task, $nextUserId, $status, $at);
+            $this->openInterval(
+                $task,
+                $nextUserId,
+                $status,
+                $at,
+                $this->resolveFromStatusName($task, $status->name),
+            );
         }
     }
 
@@ -89,8 +99,11 @@ class TaskWorkIntervalService
         return null;
     }
 
-    public function closeOpenIntervalsForTask(int $taskId, ?Carbon $at = null): void
-    {
+    public function closeOpenIntervalsForTask(
+        int $taskId,
+        ?Carbon $at = null,
+        ?string $toStatusName = null,
+    ): void {
         $at ??= AppDateTime::now();
         $open = TaskWorkInterval::query()
             ->where('task_id', $taskId)
@@ -101,7 +114,13 @@ class TaskWorkIntervalService
             $end = $interval->started_at && $interval->started_at->gt($at)
                 ? $interval->started_at
                 : $at;
-            $interval->update(['ended_at' => $end->copy()->timezone(AppDateTime::timezone())]);
+            $payload = [
+                'ended_at' => $end->copy()->timezone(AppDateTime::timezone()),
+            ];
+            if ($toStatusName !== null && $toStatusName !== '') {
+                $payload['to_status_name'] = $toStatusName;
+            }
+            $interval->update($payload);
         }
     }
 
@@ -110,6 +129,7 @@ class TaskWorkIntervalService
         int $userId,
         ProjectStatus $status,
         Carbon $at,
+        ?string $fromStatusName = null,
     ): void {
         $exists = TaskWorkInterval::query()
             ->where('task_id', $task->id)
@@ -124,9 +144,23 @@ class TaskWorkIntervalService
             'user_id' => $userId,
             'status_id' => $status->id,
             'status_name' => $status->name,
+            'from_status_name' => $fromStatusName,
             'started_at' => $at->copy()->timezone(AppDateTime::timezone()),
             'ended_at' => null,
         ]);
+    }
+
+    private function resolveFromStatusName(Task $task, string $toStatusName): ?string
+    {
+        $history = TaskStatusHistory::query()
+            ->where('task_id', $task->id)
+            ->where('to_status_name', $toStatusName)
+            ->orderByDesc('id')
+            ->first(['from_status_name']);
+
+        $name = $history?->from_status_name;
+
+        return is_string($name) && $name !== '' ? $name : null;
     }
 
     /**

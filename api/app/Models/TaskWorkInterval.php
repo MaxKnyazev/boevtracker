@@ -12,6 +12,8 @@ class TaskWorkInterval extends Model
         'user_id',
         'status_id',
         'status_name',
+        'from_status_name',
+        'to_status_name',
         'started_at',
         'ended_at',
     ];
