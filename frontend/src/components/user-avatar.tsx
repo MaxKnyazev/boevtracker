@@ -62,7 +62,7 @@ export function UserAvatar({
     <span
       title={title || displayName(user)}
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-full',
+        'inline-flex shrink-0 items-center justify-center rounded-full bg-background',
         className,
       )}
       style={{
