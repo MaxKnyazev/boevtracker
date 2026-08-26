@@ -2468,7 +2468,7 @@ function ImageLightbox({
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
-    const onWheel = (e: WheelEvent) => {
+    const onWheel = (e: globalThis.WheelEvent) => {
       e.preventDefault();
       e.stopPropagation();
       const factor = e.deltaY < 0 ? LIGHTBOX_ZOOM_STEP : 1 / LIGHTBOX_ZOOM_STEP;
