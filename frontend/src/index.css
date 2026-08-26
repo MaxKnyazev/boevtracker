@@ -103,6 +103,11 @@ body {
     radial-gradient(ellipse 60% 40% at 100% 0%, var(--glow-b), transparent);
 }
 
+.logo-font {
+  font-family: "Inter", system-ui, sans-serif;
+  font-weight: 700;
+}
+
 #root {
   min-height: 100vh;
 }

@@ -44,10 +44,47 @@ export type ProjectStatus = {
   locked?: boolean;
 };
 
+export type TaskChangeHistoryType =
+  | 'status'
+  | 'deadline_set'
+  | 'deadline_changed'
+  | 'description_changed'
+  | 'priority_changed'
+  | 'file_added'
+  | 'file_removed'
+  | 'took_task'
+  | 'assigned_assignee'
+  | 'took_co_assignee'
+  | 'assigned_co_assignee'
+  | 'removed_assignee'
+  | 'assigned_active_assignee';
+
 export type TaskStatusHistory = {
   id: number;
   fromStatusName?: string | null;
   toStatusName: string;
+  createdAt: string;
+  user: PublicUser | null;
+};
+
+export type TaskChangeHistory = {
+  id: number;
+  type: TaskChangeHistoryType;
+  payload: {
+    fromStatusName?: string | null;
+    toStatusName?: string | null;
+    fromDeadline?: string | null;
+    toDeadline?: string | null;
+    fromPriority?: Priority | null;
+    toPriority?: Priority | null;
+    fileName?: string | null;
+    targetUserId?: number | null;
+    targetUserName?: string | null;
+    targetUser?: Pick<
+      PublicUser,
+      'id' | 'username' | 'firstName' | 'lastName'
+    > | null;
+  };
   createdAt: string;
   user: PublicUser | null;
 };
@@ -59,6 +96,7 @@ export type Task = {
   priority: Priority;
   deadline?: string | null;
   projectId: number;
+  releaseId?: number | null;
   statusId: number;
   order?: number;
   activeAssigneeId?: number | null;
@@ -76,8 +114,14 @@ export type Task = {
     boardId: number;
     board?: { id: number; name: string };
   };
+  release?: {
+    id: number;
+    name: string;
+    status: ReleaseStatus;
+  } | null;
   comments?: Comment[];
   statusHistory?: TaskStatusHistory[];
+  changeHistory?: TaskChangeHistory[];
   _count?: { comments: number };
 };
 
@@ -234,6 +278,24 @@ export type Board = {
     openTasks?: number;
     inProgressTasks?: number;
   };
+};
+
+export type ReleaseStatus = 'PLANNED' | 'IN_PROGRESS' | 'RELEASED' | 'CANCELLED';
+
+export type Release = {
+  id: number;
+  name: string;
+  description?: string | null;
+  status: ReleaseStatus;
+  targetDate?: string | null;
+  releasedAt?: string | null;
+  createdById?: number | null;
+  createdBy?: PublicUser | null;
+  sortOrder: number;
+  tasksCount: number;
+  createdAt: string;
+  updatedAt: string;
+  tasks?: Task[];
 };
 
 let refreshRequestPromise: Promise<boolean> | null = null;
@@ -594,6 +656,7 @@ export const api = {
       assigneeId?: number | null;
       assigneeIds?: number[];
       activeAssigneeId?: number | null;
+      releaseId?: number | null;
     },
   ) =>
     request<{ task: Task }>(`/api/projects/${projectId}/tasks`, {
@@ -634,6 +697,44 @@ export const api = {
     }),
   deleteTask: (id: number) =>
     request<{ ok: boolean }>(`/api/tasks/${id}`, { method: 'DELETE' }),
+
+  releases: () => request<{ releases: Release[] }>('/api/releases'),
+  release: (id: number) => request<{ release: Release }>(`/api/releases/${id}`),
+  createRelease: (data: {
+    name: string;
+    description?: string;
+    status?: ReleaseStatus;
+    targetDate?: string | null;
+  }) =>
+    request<{ release: Release }>('/api/releases', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateRelease: (
+    id: number,
+    data: {
+      name?: string;
+      description?: string | null;
+      status?: ReleaseStatus;
+      targetDate?: string | null;
+    },
+  ) =>
+    request<{ release: Release }>(`/api/releases/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteRelease: (id: number) =>
+    request<{ ok: boolean }>(`/api/releases/${id}`, { method: 'DELETE' }),
+  attachReleaseTasks: (id: number, taskIds: number[]) =>
+    request<{ release: Release }>(`/api/releases/${id}/tasks`, {
+      method: 'POST',
+      body: JSON.stringify({ taskIds }),
+    }),
+  detachReleaseTask: (id: number, taskId: number) =>
+    request<{ ok: boolean }>(`/api/releases/${id}/tasks/${taskId}`, {
+      method: 'DELETE',
+    }),
+
   addComment: (taskId: number, body: string, replyToId?: number | null) =>
     request<{ comment: Comment }>(`/api/tasks/${taskId}/comments`, {
       method: 'POST',

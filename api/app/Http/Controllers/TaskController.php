@@ -7,7 +7,9 @@ use App\Models\Attachment;
 use App\Models\Comment;
 use App\Models\Project;
 use App\Models\ProjectStatus;
+use App\Models\Release;
 use App\Models\Task;
+use App\Models\TaskChangeHistory;
 use App\Models\TaskStatusHistory;
 use App\Models\User;
 use App\Services\FileStorage;
@@ -50,11 +52,13 @@ class TaskController extends Controller
             'files',
             'createdBy',
             'project.board',
+            'release',
             'comments.author',
             'comments.files',
             'comments.replyTo.author',
             'comments.replyTo.files',
             'statusHistories.user',
+            'changeHistories.user',
         ];
     }
 
@@ -158,6 +162,175 @@ class TaskController extends Controller
         return [null, $active];
     }
 
+    /**
+     * @param  array<string, mixed>|null  $payload
+     */
+    private function recordTaskChange(
+        Task $task,
+        User $user,
+        string $type,
+        ?array $payload = null,
+    ): void {
+        TaskChangeHistory::query()->create([
+            'task_id' => $task->id,
+            'user_id' => $user->id,
+            'type' => $type,
+            'payload' => $payload,
+            'created_at' => now(),
+        ]);
+    }
+
+    private function userDisplayName(User $user): string
+    {
+        $name = trim(($user->first_name ?? '').' '.($user->last_name ?? ''));
+
+        return $name !== '' ? $name : (string) ($user->username ?: '—');
+    }
+
+    /**
+     * @param  list<int>  $addedIds
+     */
+    private function recordAssigneeAdditions(
+        Task $task,
+        User $actor,
+        array $addedIds,
+        ?int $activeId,
+    ): void {
+        $addedIds = array_values(array_unique(array_map('intval', $addedIds)));
+        if ($addedIds === []) {
+            return;
+        }
+
+        $users = User::query()->whereIn('id', $addedIds)->get()->keyBy('id');
+        $actorId = (int) $actor->id;
+        $activeId = $activeId !== null ? (int) $activeId : null;
+
+        foreach ($addedIds as $addedId) {
+            $isSelf = $addedId === $actorId;
+            $isActive = $activeId !== null && $addedId === $activeId;
+
+            if ($isSelf) {
+                $this->recordTaskChange(
+                    $task,
+                    $actor,
+                    $isActive
+                        ? TaskChangeHistory::TYPE_TOOK_TASK
+                        : TaskChangeHistory::TYPE_TOOK_CO_ASSIGNEE,
+                );
+                continue;
+            }
+
+            $target = $users->get($addedId);
+            $this->recordTaskChange(
+                $task,
+                $actor,
+                $isActive
+                    ? TaskChangeHistory::TYPE_ASSIGNED_ASSIGNEE
+                    : TaskChangeHistory::TYPE_ASSIGNED_CO_ASSIGNEE,
+                $this->assigneeTargetPayload($addedId, $target),
+            );
+        }
+    }
+
+    /**
+     * @param  list<int>  $removedIds
+     */
+    private function recordAssigneeRemovals(
+        Task $task,
+        User $actor,
+        array $removedIds,
+    ): void {
+        $removedIds = array_values(array_unique(array_map('intval', $removedIds)));
+        if ($removedIds === []) {
+            return;
+        }
+
+        $users = User::query()->whereIn('id', $removedIds)->get()->keyBy('id');
+
+        foreach ($removedIds as $removedId) {
+            $target = $users->get($removedId);
+            $this->recordTaskChange(
+                $task,
+                $actor,
+                TaskChangeHistory::TYPE_REMOVED_ASSIGNEE,
+                $this->assigneeTargetPayload($removedId, $target),
+            );
+        }
+    }
+
+    /**
+     * @param  list<int>  $justAddedIds  Assignees already logged as took/assigned in this request
+     */
+    private function recordActiveAssigneeIfChanged(
+        Task $task,
+        User $actor,
+        ?int $prevActiveId,
+        ?int $nextActiveId,
+        array $justAddedIds = [],
+    ): void {
+        $prevActiveId = $prevActiveId !== null ? (int) $prevActiveId : null;
+        $nextActiveId = $nextActiveId !== null ? (int) $nextActiveId : null;
+        if ($nextActiveId === null || $prevActiveId === $nextActiveId) {
+            return;
+        }
+
+        $justAddedIds = array_map('intval', $justAddedIds);
+        // Newly added primary assignee already gets took_task / assigned_assignee.
+        if (in_array($nextActiveId, $justAddedIds, true)) {
+            return;
+        }
+
+        $target = User::query()->find($nextActiveId);
+        $this->recordTaskChange(
+            $task,
+            $actor,
+            TaskChangeHistory::TYPE_ASSIGNED_ACTIVE_ASSIGNEE,
+            $this->assigneeTargetPayload($nextActiveId, $target),
+        );
+    }
+
+    /**
+     * @return array{targetUserId: int, targetUserName: string, targetUser: array<string, mixed>|null}
+     */
+    private function assigneeTargetPayload(int $userId, ?User $target): array
+    {
+        return [
+            'targetUserId' => $userId,
+            'targetUserName' => $target
+                ? $this->userDisplayName($target)
+                : '—',
+            'targetUser' => $target
+                ? [
+                    'id' => $target->id,
+                    'username' => $target->username,
+                    'firstName' => $target->first_name,
+                    'lastName' => $target->last_name,
+                ]
+                : null,
+        ];
+    }
+
+    private function deadlineDateKey(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        $raw = (string) $value;
+        if (preg_match('/^\d{4}-\d{2}-\d{2}/', $raw, $m)) {
+            return substr($raw, 0, 10);
+        }
+
+        try {
+            return \Carbon\Carbon::parse($raw)->format('Y-m-d');
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     private function recordStatusChange(
         Task $task,
         User $user,
@@ -185,6 +358,11 @@ class TaskController extends Controller
             'from_status_name' => $from?->name,
             'to_status_name' => $to->name,
             'created_at' => now(),
+        ]);
+
+        $this->recordTaskChange($task, $user, TaskChangeHistory::TYPE_STATUS, [
+            'fromStatusName' => $from?->name,
+            'toStatusName' => $to->name,
         ]);
 
         if ($fromStatusId !== null) {
@@ -281,17 +459,19 @@ class TaskController extends Controller
             'title' => ['required', 'string', 'min:1', 'max:255'],
             'description' => ['nullable', 'string', 'max:10000'],
             'priority' => ['nullable', 'in:LOW,MEDIUM,HIGH,CRITICAL'],
-            'deadline' => ['nullable', 'date'],
+            'deadline' => ['nullable', 'date', 'after_or_equal:today'],
             'statusId' => ['nullable', 'integer'],
             'assigneeId' => ['nullable', 'integer'],
             'assigneeIds' => ['nullable', 'array'],
             'assigneeIds.*' => ['integer'],
             'activeAssigneeId' => ['nullable', 'integer'],
+            'releaseId' => ['nullable', 'integer'],
         ], [
             'title.required' => 'Укажите название задачи',
             'title.min' => 'Укажите название задачи',
             'title.max' => 'Название задачи не длиннее 255 символов',
             'description.max' => 'Описание не длиннее 10000 символов',
+            'deadline.after_or_equal' => 'Дедлайн можно поставить только на сегодня или позже',
         ]);
         if ($validator->fails()) {
             return response()->json(['error' => $validator->errors()->toArray()], 400);
@@ -333,12 +513,18 @@ class TaskController extends Controller
             $activeId = null;
         }
 
+        $releaseId = isset($data['releaseId']) ? (int) $data['releaseId'] : null;
+        if ($releaseId !== null && ! Release::query()->whereKey($releaseId)->exists()) {
+            return response()->json(['error' => 'Релиз не найден'], 404);
+        }
+
         $task = Task::query()->create([
             'title' => $data['title'],
             'description' => $data['description'] ?? null,
             'priority' => $data['priority'] ?? 'MEDIUM',
             'deadline' => $data['deadline'] ?? null,
             'project_id' => $projectId,
+            'release_id' => $releaseId,
             'status_id' => $statusId,
             'sort_order' => $maxOrder + 1,
             'active_assignee_id' => $activeId,
@@ -349,6 +535,7 @@ class TaskController extends Controller
         if ($assigneeIds !== []) {
             $task->assignees()->sync($assigneeIds);
             $this->notifications->notifyNewAssignees($user, $task, $assigneeIds);
+            $this->recordAssigneeAdditions($task, $user, $assigneeIds, $activeId);
         }
 
         $this->recordStatusChange($task, $user, null, (int) $statusId);
@@ -398,18 +585,20 @@ class TaskController extends Controller
             'title' => ['sometimes', 'string', 'min:1', 'max:255'],
             'description' => ['nullable', 'string', 'max:10000'],
             'priority' => ['sometimes', 'in:LOW,MEDIUM,HIGH,CRITICAL'],
-            'deadline' => ['nullable', 'date'],
+            'deadline' => ['nullable', 'date', 'after_or_equal:today'],
             'statusId' => ['sometimes', 'integer'],
             'assigneeId' => ['nullable', 'integer'],
             'assigneeIds' => ['nullable', 'array'],
             'assigneeIds.*' => ['integer'],
             'activeAssigneeId' => ['nullable', 'integer'],
             'projectId' => ['sometimes', 'integer'],
+            'releaseId' => ['nullable', 'integer'],
             'closeComment' => ['nullable', 'string', 'max:5000'],
         ], [
             'title.min' => 'Укажите название задачи',
             'title.max' => 'Название задачи не длиннее 255 символов',
             'description.max' => 'Описание не длиннее 10000 символов',
+            'deadline.after_or_equal' => 'Дедлайн можно поставить только на сегодня или позже',
         ]);
         if ($validator->fails()) {
             return response()->json(['error' => $validator->errors()->toArray()], 400);
@@ -425,6 +614,10 @@ class TaskController extends Controller
             : null;
 
         $data = $validator->validated();
+        $prevDescription = $task->description;
+        $prevPriority = $task->priority;
+        $prevDeadlineKey = $this->deadlineDateKey($task->deadline);
+
         $update = [];
         if (array_key_exists('title', $data)) {
             $update['title'] = $data['title'];
@@ -437,6 +630,17 @@ class TaskController extends Controller
         }
         if (array_key_exists('deadline', $data)) {
             $update['deadline'] = $data['deadline'];
+        }
+        if (array_key_exists('releaseId', $data)) {
+            if ($data['releaseId'] === null) {
+                $update['release_id'] = null;
+            } else {
+                $releaseId = (int) $data['releaseId'];
+                if (! Release::query()->whereKey($releaseId)->exists()) {
+                    return response()->json(['error' => 'Релиз не найден'], 404);
+                }
+                $update['release_id'] = $releaseId;
+            }
         }
 
         $fromStatusId = (int) $task->status_id;
@@ -478,6 +682,8 @@ class TaskController extends Controller
 
         // Sync assignees before resolving active for status change (list may change in same request).
         $needsActiveChoice = false;
+        $addedAssigneeIds = [];
+        $removedAssigneeIds = [];
         $assigneesTouched = array_key_exists('assigneeIds', $data)
             || array_key_exists('assigneeId', $data);
 
@@ -490,11 +696,13 @@ class TaskController extends Controller
                 ? ($data['activeAssigneeId'] !== null ? (int) $data['activeAssigneeId'] : null)
                 : null;
 
-            $added = $this->syncAssignees($task, $nextIds, $explicitActive);
+            $previousAssigneeIds = $task->assigneeIds();
+            $addedAssigneeIds = $this->syncAssignees($task, $nextIds, $explicitActive);
+            $removedAssigneeIds = array_values(array_diff($previousAssigneeIds, $nextIds));
             $task->unsetRelation('assignees');
             $task->load('assignees');
-            if ($added !== []) {
-                $this->notifications->notifyNewAssignees($user, $task, $added);
+            if ($addedAssigneeIds !== []) {
+                $this->notifications->notifyNewAssignees($user, $task, $addedAssigneeIds);
             }
             if (count($nextIds) > 1 && ! array_key_exists('activeAssigneeId', $data)) {
                 $needsActiveChoice = true;
@@ -539,6 +747,79 @@ class TaskController extends Controller
 
         $task->refresh();
         $task->load(['assignees', 'status', 'project.statuses']);
+
+        if (array_key_exists('description', $update)) {
+            $prev = trim((string) ($prevDescription ?? ''));
+            $next = trim((string) ($task->description ?? ''));
+            if ($prev !== $next) {
+                $this->recordTaskChange(
+                    $task,
+                    $user,
+                    TaskChangeHistory::TYPE_DESCRIPTION_CHANGED,
+                );
+            }
+        }
+
+        if (array_key_exists('priority', $update) && $prevPriority !== $task->priority) {
+            $this->recordTaskChange(
+                $task,
+                $user,
+                TaskChangeHistory::TYPE_PRIORITY_CHANGED,
+                [
+                    'fromPriority' => $prevPriority,
+                    'toPriority' => $task->priority,
+                ],
+            );
+        }
+
+        if (array_key_exists('deadline', $update)) {
+            $nextDeadlineKey = $this->deadlineDateKey($task->deadline);
+            if ($prevDeadlineKey !== $nextDeadlineKey) {
+                if ($prevDeadlineKey === null && $nextDeadlineKey !== null) {
+                    $this->recordTaskChange(
+                        $task,
+                        $user,
+                        TaskChangeHistory::TYPE_DEADLINE_SET,
+                        ['toDeadline' => $nextDeadlineKey],
+                    );
+                } else {
+                    $this->recordTaskChange(
+                        $task,
+                        $user,
+                        TaskChangeHistory::TYPE_DEADLINE_CHANGED,
+                        [
+                            'fromDeadline' => $prevDeadlineKey,
+                            'toDeadline' => $nextDeadlineKey,
+                        ],
+                    );
+                }
+            }
+        }
+
+        if ($addedAssigneeIds !== []) {
+            $this->recordAssigneeAdditions(
+                $task,
+                $user,
+                $addedAssigneeIds,
+                $task->active_assignee_id !== null
+                    ? (int) $task->active_assignee_id
+                    : null,
+            );
+        }
+
+        if ($removedAssigneeIds !== []) {
+            $this->recordAssigneeRemovals($task, $user, $removedAssigneeIds);
+        }
+
+        $this->recordActiveAssigneeIfChanged(
+            $task,
+            $user,
+            $prevActiveId,
+            $task->active_assignee_id !== null
+                ? (int) $task->active_assignee_id
+                : null,
+            $addedAssigneeIds,
+        );
 
         if ($statusChanging) {
             $this->recordStatusChange(
@@ -618,6 +899,25 @@ class TaskController extends Controller
         $nextActiveId = $task->active_assignee_id !== null
             ? (int) $task->active_assignee_id
             : null;
+
+        $addedOnTake = $already ? [] : [(int) $user->id];
+        if (! $already) {
+            $this->recordAssigneeAdditions(
+                $task,
+                $user,
+                $addedOnTake,
+                $nextActiveId,
+            );
+        }
+
+        $this->recordActiveAssigneeIfChanged(
+            $task,
+            $user,
+            $prevActiveId,
+            $nextActiveId,
+            $addedOnTake,
+        );
+
         if ($prevActiveId !== $nextActiveId) {
             $task->load(['assignees', 'status', 'project.statuses']);
             $this->workIntervals->onActiveAssigneeChange(
@@ -668,6 +968,9 @@ class TaskController extends Controller
 
         $fromStatusId = (int) $task->status_id;
         $statusChanged = $status->id !== $task->status_id;
+        $prevActiveId = $task->active_assignee_id !== null
+            ? (int) $task->active_assignee_id
+            : null;
 
         if ($statusChanged) {
             [$activeErr, $activeForStatus] = $this->resolveActiveForStatusChange(
@@ -741,6 +1044,16 @@ class TaskController extends Controller
         });
 
         $task = Task::query()->with($this->taskRelations())->find($id);
+        if ($task) {
+            $this->recordActiveAssigneeIfChanged(
+                $task,
+                $user,
+                $prevActiveId,
+                $task->active_assignee_id !== null
+                    ? (int) $task->active_assignee_id
+                    : null,
+            );
+        }
         if ($statusChanged && $task) {
             $task->loadMissing(['assignees', 'status', 'project.statuses']);
             $worker = $this->workIntervals->resolveWorkerUserId(
@@ -1017,7 +1330,8 @@ class TaskController extends Controller
 
     public function deleteAttachment(Request $request, int $id): JsonResponse
     {
-        if ($resp = $this->forbidWrite($this->user($request))) {
+        $user = $this->user($request);
+        if ($resp = $this->forbidWrite($user)) {
             return $resp;
         }
 
@@ -1028,6 +1342,8 @@ class TaskController extends Controller
 
         $commentId = $attachment->comment_id;
         $taskId = $attachment->task_id ? (int) $attachment->task_id : null;
+        $fileName = $attachment->original_name;
+        $isTaskFile = $attachment->task_id !== null && $attachment->comment_id === null;
 
         if ($this->files->exists($attachment->key)) {
             $this->files->delete($attachment->key);
@@ -1046,6 +1362,18 @@ class TaskController extends Controller
                     $comment->edited_at = now();
                     $comment->save();
                 }
+            }
+        }
+
+        if ($taskId && $isTaskFile) {
+            $task = Task::query()->find($taskId);
+            if ($task) {
+                $this->recordTaskChange(
+                    $task,
+                    $user,
+                    TaskChangeHistory::TYPE_FILE_REMOVED,
+                    ['fileName' => $fileName],
+                );
             }
         }
 
@@ -1087,6 +1415,7 @@ class TaskController extends Controller
 
     private function storeUploads(Request $request, array $owner): JsonResponse
     {
+        $user = $this->user($request);
         $list = [];
         foreach ($request->allFiles() as $value) {
             if (is_array($value)) {
@@ -1106,6 +1435,11 @@ class TaskController extends Controller
         }
 
         $attachments = [];
+        $taskForHistory = null;
+        if (! empty($owner['task_id']) && empty($owner['comment_id'])) {
+            $taskForHistory = Task::query()->find($owner['task_id']);
+        }
+
         foreach ($list as $file) {
             if ($file->getSize() > $this->files->maxBytes()) {
                 return response()->json([
@@ -1128,6 +1462,15 @@ class TaskController extends Controller
                 'url' => '/api/attachments/'.$attachment->id,
             ]);
             $attachments[] = ApiPresenter::attachment($attachment->fresh());
+
+            if ($taskForHistory) {
+                $this->recordTaskChange(
+                    $taskForHistory,
+                    $user,
+                    TaskChangeHistory::TYPE_FILE_ADDED,
+                    ['fileName' => $stored['originalName']],
+                );
+            }
         }
 
         $taskId = $owner['task_id'] ?? null;

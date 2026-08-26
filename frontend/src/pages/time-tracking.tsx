@@ -60,7 +60,11 @@ function readTab(): TimeTab {
 
 export function TimeTrackingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tab, setTabState] = useState<TimeTab>(() => readTab());
+  const [tab, setTabState] = useState<TimeTab>(() => {
+    const fromUrl = searchParams.get('tab');
+    if (fromUrl === 'list' || fromUrl === 'summary') return fromUrl;
+    return readTab();
+  });
   const [shifts, setShifts] = useState<WorkShift[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -70,14 +74,48 @@ export function TimeTrackingPage() {
   const [summaryFocusUser, setSummaryFocusUser] = useState<string | undefined>();
   const [summaryFocusKey, setSummaryFocusKey] = useState(0);
 
-  const setTab = useCallback((next: TimeTab) => {
-    setTabState(next);
-    try {
-      localStorage.setItem(TAB_STORAGE_KEY, next);
-    } catch {
-      // ignore
+  const setTab = useCallback(
+    (next: TimeTab) => {
+      setTabState(next);
+      try {
+        localStorage.setItem(TAB_STORAGE_KEY, next);
+      } catch {
+        // ignore
+      }
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          params.set('tab', next);
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  // Sync tab from URL (sidebar links: /time?tab=list|summary).
+  useEffect(() => {
+    const fromUrl = searchParams.get('tab');
+    if (fromUrl === 'list' || fromUrl === 'summary') {
+      setTabState((current) => (current === fromUrl ? current : fromUrl));
+      try {
+        localStorage.setItem(TAB_STORAGE_KEY, fromUrl);
+      } catch {
+        // ignore
+      }
+      return;
     }
-  }, []);
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (params.get('tab') === tab) return prev;
+        params.set('tab', tab);
+        return params;
+      },
+      { replace: true },
+    );
+  }, [searchParams, setSearchParams, tab]);
 
   const load = useCallback(async (opts?: { soft?: boolean }) => {
     if (!opts?.soft) setLoading(true);
@@ -130,11 +168,22 @@ export function TimeTrackingPage() {
     if (!userParam || !/^\d+$/.test(userParam)) return;
     setSummaryFocusUser(userParam);
     setSummaryFocusKey((key) => key + 1);
-    setTab('summary');
-    const next = new URLSearchParams(searchParams);
-    next.delete('user');
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams, setTab]);
+    setTabState('summary');
+    try {
+      localStorage.setItem(TAB_STORAGE_KEY, 'summary');
+    } catch {
+      // ignore
+    }
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        params.delete('user');
+        params.set('tab', 'summary');
+        return params;
+      },
+      { replace: true },
+    );
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (loading) return;

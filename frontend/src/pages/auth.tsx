@@ -215,7 +215,7 @@ function AuthShell({
       </div>
       <div className="w-full max-w-md rounded-2xl border border-border bg-card/80 p-8 shadow-xl backdrop-blur">
         <div className="mb-6 text-center">
-          <div className="text-2xl font-bold text-primary">BoevTracker</div>
+          <div className="logo-font text-2xl text-primary">BoevTracker</div>
           <h1 className="mt-4 text-xl font-semibold">{title}</h1>
           <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
         </div>

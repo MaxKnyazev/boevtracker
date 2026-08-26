@@ -6,12 +6,12 @@ import {
   UserAvatar,
   displayName,
 } from '@/components/user-avatar';
-import { PRIORITY_LABELS, cn } from '@/lib/utils';
+import { priorityOptions } from '@/components/priority-select';
+import { cn } from '@/lib/utils';
 import {
   DEFAULT_TASK_VIEW,
   hasActiveTaskView,
   type DeadlineFilter,
-  type StatusTimeFilter,
   type TaskSortDir,
   type TaskSortField,
   type TaskViewState,
@@ -25,6 +25,7 @@ export function TaskViewControls({
   className,
   boards,
   projects,
+  statuses,
   showSort = true,
 }: {
   view: TaskViewState;
@@ -33,6 +34,7 @@ export function TaskViewControls({
   className?: string;
   boards?: SelectOption[];
   projects?: SelectOption[];
+  statuses?: SelectOption[];
   showSort?: boolean;
 }) {
   const active = hasActiveTaskView(view);
@@ -95,17 +97,24 @@ export function TaskViewControls({
           )}
 
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="shrink-0">Статус</span>
+            <AppSelect
+              value={view.status}
+              onValueChange={(v) => patch({ status: v })}
+              options={[
+                { value: 'all', label: 'Все' },
+                ...(statuses || []),
+              ]}
+              className="w-[10.5rem] text-xs"
+            />
+          </label>
+
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="shrink-0">Приоритет</span>
             <AppSelect
               value={view.priority}
               onValueChange={(v) => patch({ priority: v })}
-              options={[
-                { value: 'all', label: 'Все' },
-                ...Object.entries(PRIORITY_LABELS).map(([value, label]) => ({
-                  value,
-                  label,
-                })),
-              ]}
+              options={priorityOptions(true)}
               className="w-[8.5rem] text-xs"
             />
           </label>
@@ -127,24 +136,6 @@ export function TaskViewControls({
           </label>
 
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="shrink-0">В статусе</span>
-            <AppSelect
-              value={view.statusTime}
-              onValueChange={(v) =>
-                patch({ statusTime: v as StatusTimeFilter })
-              }
-              options={[
-                { value: 'all', label: 'Все' },
-                { value: '1d', label: 'Дольше 1 дня' },
-                { value: '3d', label: 'Дольше 3 дней' },
-                { value: '7d', label: 'Дольше 7 дней' },
-                { value: '30d', label: 'Дольше 30 дней' },
-              ]}
-              className="w-[9.5rem] text-xs"
-            />
-          </label>
-
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="shrink-0">Исполнитель</span>
             <AppSelect
               value={view.assignee}
@@ -153,9 +144,9 @@ export function TaskViewControls({
                 { value: 'all', label: 'Все' },
                 {
                   value: 'none',
-                  label: 'Без исполнителя',
+                  label: 'Нет исполнителя',
                   leading: (
-                    <EmptyAssigneeAvatar size="sm" title="Без исполнителя" />
+                    <EmptyAssigneeAvatar size="sm" title="Нет исполнителя" />
                   ),
                 },
                 ...users.map((u) => ({

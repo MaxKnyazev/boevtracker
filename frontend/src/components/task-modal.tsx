@@ -1,15 +1,19 @@
 import {
   FormEvent,
   useEffect,
+  useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ClipboardEvent,
   type MouseEvent,
   type PointerEvent,
+  type WheelEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Check,
+  Copy,
   Download,
   FileIcon,
   GripHorizontal,
@@ -19,6 +23,7 @@ import {
   Pencil,
   Plus,
   Reply,
+  Rocket,
   Send,
   Trash2,
   UploadCloud,
@@ -33,13 +38,18 @@ import {
   type Comment,
   type Project,
   type PublicUser,
+  type Release,
   type Task,
+  type TaskChangeHistory,
   type User,
 } from '@/lib/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { DeadlinePicker } from '@/components/deadline-picker';
 import { Input, Label } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { PrioritySelect } from '@/components/priority-select';
+import { ReleasePicker } from '@/components/release-picker';
 import { AppSelect } from '@/components/ui/select';
 import {
   DropdownMenu,
@@ -107,6 +117,137 @@ function formatChatTime(value: string | Date): string {
   });
 }
 
+function renderChangeHistoryText(entry: TaskChangeHistory) {
+  const who = (
+    <span className="font-medium">{displayName(entry.user)}</span>
+  );
+  const payload = entry.payload ?? {};
+
+  switch (entry.type) {
+    case 'status':
+      if (payload.fromStatusName) {
+        return (
+          <>
+            {who} перевёл из{' '}
+            <span className="font-medium">«{payload.fromStatusName}»</span> в{' '}
+            <span className="font-medium">«{payload.toStatusName}»</span>
+          </>
+        );
+      }
+      return (
+        <>
+          {who} установил статус{' '}
+          <span className="font-medium">«{payload.toStatusName}»</span>
+        </>
+      );
+    case 'deadline_set':
+      return (
+        <>
+          {who} назначил дедлайн{' '}
+          <span className="font-medium">
+            {formatDate(payload.toDeadline) || '—'}
+          </span>
+        </>
+      );
+    case 'deadline_changed':
+      return (
+        <>
+          {who} изменил дедлайн с{' '}
+          <span className="font-medium">
+            {formatDate(payload.fromDeadline) || '—'}
+          </span>{' '}
+          на{' '}
+          <span className="font-medium">
+            {formatDate(payload.toDeadline) || '—'}
+          </span>
+        </>
+      );
+    case 'description_changed':
+      return <>{who} изменил описание задачи</>;
+    case 'priority_changed':
+      return (
+        <>
+          {who} изменил приоритет задачи с{' '}
+          <span className="font-medium">
+            {payload.fromPriority
+              ? PRIORITY_LABELS[payload.fromPriority] ?? payload.fromPriority
+              : '—'}
+          </span>{' '}
+          на{' '}
+          <span className="font-medium">
+            {payload.toPriority
+              ? PRIORITY_LABELS[payload.toPriority] ?? payload.toPriority
+              : '—'}
+          </span>
+        </>
+      );
+    case 'file_added':
+      return (
+        <>
+          {who} добавил файл{' '}
+          <span className="font-medium">{payload.fileName || '—'}</span>
+        </>
+      );
+    case 'file_removed':
+      return (
+        <>
+          {who} удалил файл{' '}
+          <span className="font-medium">{payload.fileName || '—'}</span>
+        </>
+      );
+    case 'took_task':
+      return <>{who} взял задачу в работу</>;
+    case 'assigned_assignee':
+      return (
+        <>
+          {who} назначил исполнителем{' '}
+          <span className="font-medium">
+            {payload.targetUser
+              ? displayName(payload.targetUser)
+              : payload.targetUserName || '—'}
+          </span>
+        </>
+      );
+    case 'took_co_assignee':
+      return <>{who} взял задачу в совместное исполнение</>;
+    case 'assigned_co_assignee':
+      return (
+        <>
+          {who} назначил в совместное исполнение{' '}
+          <span className="font-medium">
+            {payload.targetUser
+              ? displayName(payload.targetUser)
+              : payload.targetUserName || '—'}
+          </span>
+        </>
+      );
+    case 'removed_assignee':
+      return (
+        <>
+          {who} убрал исполнителя{' '}
+          <span className="font-medium">
+            {payload.targetUser
+              ? displayName(payload.targetUser)
+              : payload.targetUserName || '—'}
+          </span>
+        </>
+      );
+    case 'assigned_active_assignee':
+      return (
+        <>
+          {who} назначил активным исполнителем{' '}
+          <span className="font-medium">
+            {payload.targetUser
+              ? displayName(payload.targetUser)
+              : payload.targetUserName || '—'}
+          </span>
+        </>
+      );
+    default:
+      return <>{who} внёс изменение</>;
+  }
+}
+
 function formatFileSize(size: number): string {
   if (size < 1024) return `${size} Б`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} КБ`;
@@ -117,6 +258,17 @@ const CHAT_HEIGHT_KEY = 'boevtracker.taskChatHeight';
 const DEFAULT_CHAT_HEIGHT = 380;
 const MIN_CHAT_HEIGHT = 260;
 const MAX_CHAT_HEIGHT = 900;
+const TASK_MODAL_LG_QUERY = '(min-width: 1024px)';
+
+function subscribeLg(onChange: () => void) {
+  const mq = window.matchMedia(TASK_MODAL_LG_QUERY);
+  mq.addEventListener('change', onChange);
+  return () => mq.removeEventListener('change', onChange);
+}
+
+function getLgSnapshot() {
+  return window.matchMedia(TASK_MODAL_LG_QUERY).matches;
+}
 
 function clampChatHeight(value: number): number {
   return Math.min(MAX_CHAT_HEIGHT, Math.max(MIN_CHAT_HEIGHT, Math.round(value)));
@@ -232,6 +384,8 @@ export function TaskModal({
   const [comment, setComment] = useState('');
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [minimized, setMinimized] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const linkCopiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
@@ -258,6 +412,7 @@ export function TaskModal({
   );
   const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
   const [assigneeDraftIds, setAssigneeDraftIds] = useState<number[]>([]);
+  const [releases, setReleases] = useState<Release[]>([]);
   const [chatHeight, setChatHeight] = useState(readStoredChatHeight);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
@@ -268,14 +423,24 @@ export function TaskModal({
   const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
   const commentComposerRef = useRef<HTMLDivElement | null>(null);
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
+  const modalBodyRef = useRef<HTMLDivElement | null>(null);
+  const modalPinRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const prevCommentsCountRef = useRef<number | null>(null);
+  const [scrollPortH, setScrollPortH] = useState(0);
+  const isLgLayout = useSyncExternalStore(subscribeLg, getLgSnapshot, () => true);
 
   const scrollModalToTop = () => {
-    const el = dialogContentRef.current;
+    const el = modalBodyRef.current ?? dialogContentRef.current;
     if (!el) return;
     el.scrollTop = 0;
+  };
+
+  const forwardWheelToModalBody = (e: WheelEvent<HTMLElement>) => {
+    const body = modalBodyRef.current;
+    if (!body) return;
+    body.scrollTop += e.deltaY;
   };
 
   const startChatResize = (e: PointerEvent<HTMLDivElement>) => {
@@ -345,11 +510,27 @@ export function TaskModal({
     setPendingFiles([]);
     setMinimized(false);
     setHighlightedCommentId(null);
+    setLinkCopied(false);
     if (highlightTimerRef.current) {
       clearTimeout(highlightTimerRef.current);
       highlightTimerRef.current = null;
     }
     void load();
+  }, [taskId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .releases()
+      .then((res) => {
+        if (!cancelled && mountedRef.current) setReleases(res.releases);
+      })
+      .catch(() => {
+        if (!cancelled && mountedRef.current) setReleases([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [taskId]);
 
   useEffect(() => {
@@ -364,6 +545,7 @@ export function TaskModal({
   useEffect(() => {
     return () => {
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      if (linkCopiedTimerRef.current) clearTimeout(linkCopiedTimerRef.current);
     };
   }, []);
 
@@ -391,6 +573,17 @@ export function TaskModal({
     const id = window.requestAnimationFrame(() => scrollModalToTop());
     return () => window.cancelAnimationFrame(id);
   }, [taskId, task?.id, minimized]);
+
+  useEffect(() => {
+    if (minimized) return;
+    const pin = modalPinRef.current;
+    if (!pin) return;
+    const update = () => setScrollPortH(pin.clientHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(pin);
+    return () => ro.disconnect();
+  }, [minimized, task?.id, isLgLayout]);
 
   const saveField = async (data: Record<string, unknown>) => {
     if (!writable) return;
@@ -702,6 +895,24 @@ export function TaskModal({
   const isFileUploadActive = uploadingFiles || commentFileUploads.length > 0;
   const minimizedProgress = isFileUploadActive ? (overallUploadPercent ?? 0) : null;
 
+  const copyTaskLink = async () => {
+    const projectId = task.projectId || project?.id;
+    if (!projectId) return;
+    const boardId = task.project?.boardId ?? project?.boardId;
+    const path = boardId
+      ? `/boards/${boardId}?tab=${projectId}&task=${task.id}`
+      : `/projects/${projectId}?task=${task.id}`;
+    const url = `${window.location.origin}${path}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      if (linkCopiedTimerRef.current) clearTimeout(linkCopiedTimerRef.current);
+      linkCopiedTimerRef.current = setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      setError('Не удалось скопировать ссылку');
+    }
+  };
+
   const handleDialogOpenChange = (open: boolean) => {
     if (!open) {
       if (lightboxFile) {
@@ -728,7 +939,7 @@ export function TaskModal({
     // Portaled dropdown / select menus live outside DialogContent.
     if (
       target?.closest?.(
-        '[data-assignee-picker], [data-mention-picker], [data-radix-dropdown-menu-content], [data-radix-select-content], [role="menu"]',
+        '[data-assignee-picker], [data-release-picker], [data-mention-picker], [data-radix-dropdown-menu-content], [data-radix-popover-content], [data-radix-select-content], [data-radix-popper-content-wrapper], [role="menu"]',
       )
     ) {
       event.preventDefault();
@@ -741,7 +952,7 @@ export function TaskModal({
       <Dialog open onOpenChange={handleDialogOpenChange}>
         <DialogContent
           ref={dialogContentRef}
-          className="max-h-[min(90vh,calc(100%-2rem))] max-w-4xl overflow-x-hidden overflow-y-auto overscroll-contain p-0"
+          className="flex h-[min(90vh,calc(100%-2rem))] max-h-[min(90vh,calc(100%-2rem))] max-w-6xl flex-col gap-0 overflow-hidden p-0"
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             scrollModalToTop();
@@ -762,7 +973,19 @@ export function TaskModal({
         >
         <button
           type="button"
-          className="absolute right-12 top-4 z-10 rounded-sm opacity-70 hover:opacity-100"
+          className="absolute right-20 top-4 z-30 cursor-pointer rounded-sm opacity-70 hover:opacity-100"
+          title={linkCopied ? 'Ссылка скопирована' : 'Копировать ссылку на задачу'}
+          onClick={() => void copyTaskLink()}
+        >
+          {linkCopied ? (
+            <Check className="h-4 w-4 text-emerald-600" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+        </button>
+        <button
+          type="button"
+          className="absolute right-12 top-4 z-30 cursor-pointer rounded-sm opacity-70 hover:opacity-100"
           title={isFileUploadActive ? 'Свернуть (загрузка продолжится)' : 'Свернуть'}
           onClick={() => {
             // While uploading, close the modal so the global dock stays visible.
@@ -775,21 +998,51 @@ export function TaskModal({
         >
           <Minus className="h-4 w-4" />
         </button>
-        <div className="min-w-0 p-6 [scrollbar-gutter:stable]">
-          <DialogHeader className="min-w-0">
-            <DialogTitle className="sr-only">{task.title}</DialogTitle>
-            <div className="flex min-h-11 min-w-0 items-start gap-2 pr-14">
-              {writable && editingTitle ? (
-                <>
-                  <Input
-                    value={titleDraft}
-                    onChange={(e) => setTitleDraft(e.target.value)}
-                    className="h-11 min-w-0 flex-1 text-lg font-semibold"
-                    maxLength={MAX_TASK_TITLE_LENGTH}
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="shrink-0 px-6 pt-6 pb-2">
+            <DialogHeader className="min-w-0">
+              <DialogTitle className="sr-only">{task.title}</DialogTitle>
+              <div className="flex min-h-11 min-w-0 items-start gap-2 pr-24">
+                {writable && editingTitle ? (
+                  <>
+                    <Input
+                      value={titleDraft}
+                      onChange={(e) => setTitleDraft(e.target.value)}
+                      className="h-11 min-w-0 flex-1 text-lg font-semibold"
+                      maxLength={MAX_TASK_TITLE_LENGTH}
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void (async () => {
+                            const next = titleDraft.trim();
+                            if (!next) return;
+                            if (next.length > MAX_TASK_TITLE_LENGTH) {
+                              setError(
+                                `Название задачи не длиннее ${MAX_TASK_TITLE_LENGTH} символов`,
+                              );
+                              return;
+                            }
+                            await saveField({ title: next });
+                            setEditingTitle(false);
+                          })();
+                        }
+                        if (e.key === 'Escape') {
+                          setEditingTitle(false);
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      className="h-11 w-11 shrink-0"
+                      disabled={
+                        saving ||
+                        !titleDraft.trim() ||
+                        titleDraft.trim().length > MAX_TASK_TITLE_LENGTH
+                      }
+                      title="Принять"
+                      onClick={() => {
                         void (async () => {
                           const next = titleDraft.trim();
                           if (!next) return;
@@ -802,85 +1055,261 @@ export function TaskModal({
                           await saveField({ title: next });
                           setEditingTitle(false);
                         })();
-                      }
-                      if (e.key === 'Escape') {
-                        setEditingTitle(false);
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    size="icon"
-                    className="h-11 w-11 shrink-0"
-                    disabled={
-                      saving ||
-                      !titleDraft.trim() ||
-                      titleDraft.trim().length > MAX_TASK_TITLE_LENGTH
-                    }
-                    title="Принять"
-                    onClick={() => {
-                      void (async () => {
-                        const next = titleDraft.trim();
-                        if (!next) return;
-                        if (next.length > MAX_TASK_TITLE_LENGTH) {
-                          setError(
-                            `Название задачи не длиннее ${MAX_TASK_TITLE_LENGTH} символов`,
-                          );
-                          return;
-                        }
-                        await saveField({ title: next });
-                        setEditingTitle(false);
-                      })();
-                    }}
-                  >
-                    <Check className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-11 w-11 shrink-0"
-                    title="Отменить"
-                    onClick={() => setEditingTitle(false)}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <h2
-                    className="min-w-0 flex-1 py-2 text-lg font-semibold leading-snug break-words [overflow-wrap:anywhere]"
-                    title={task.title}
-                  >
-                    {task.title}
-                  </h2>
-                  {writable && (
+                      }}
+                    >
+                      <Check className="h-4 w-4" />
+                    </Button>
                     <Button
                       type="button"
                       variant="outline"
                       size="icon"
                       className="h-11 w-11 shrink-0"
-                      title="Редактировать название"
-                      onClick={() => {
-                        setTitleDraft(task.title);
-                        setEditingTitle(true);
-                      }}
+                      title="Отменить"
+                      onClick={() => setEditingTitle(false)}
                     >
-                      <Pencil className="h-4 w-4" />
+                      <X className="h-4 w-4" />
                     </Button>
-                  )}
-                </>
+                  </>
+                ) : (
+                  <>
+                    {writable && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-11 w-11 shrink-0"
+                        title="Редактировать название"
+                        onClick={() => {
+                          setTitleDraft(task.title);
+                          setEditingTitle(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <h2
+                      className="min-w-0 flex-1 py-2 text-lg font-semibold leading-snug break-words [overflow-wrap:anywhere]"
+                      title={task.title}
+                    >
+                      {task.title}
+                    </h2>
+                  </>
+                )}
+              </div>
+            </DialogHeader>
+
+            {error && (
+              <p className="mt-2 text-sm text-destructive">{error}</p>
+            )}
+          </div>
+
+          <div
+            ref={(node) => {
+              modalPinRef.current = node;
+              if (!isLgLayout) modalBodyRef.current = node;
+            }}
+            className={cn(
+              'min-h-0 min-w-0 flex-1',
+              isLgLayout
+                ? 'relative overflow-hidden'
+                : 'overflow-y-auto overscroll-contain px-6 pb-6 pt-2 [scrollbar-gutter:stable]',
+            )}
+          >
+            <aside
+              className={cn(
+                'min-w-0',
+                isLgLayout
+                  ? 'absolute left-6 top-2 z-[1] flex w-[240px] flex-col overflow-hidden'
+                  : 'mb-4 h-fit',
               )}
-            </div>
-          </DialogHeader>
+              style={
+                isLgLayout
+                  ? {
+                      height:
+                        scrollPortH > 32
+                          ? scrollPortH - 32
+                          : 'calc(100% - 0.5rem)',
+                    }
+                  : undefined
+              }
+              onWheel={isLgLayout ? forwardWheelToModalBody : undefined}
+            >
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background/40">
+                <div className="shrink-0 border-b border-border px-3 py-2">
+                  <div className="text-sm font-medium">Свойства</div>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-1">
+                  <Meta label="Статус">
+                    {writable ? (
+                      <AppSelect
+                        value={String(task.statusId)}
+                        onValueChange={(v) => void changeStatus(Number(v))}
+                        options={(project?.statuses || []).map((s) => ({
+                          value: String(s.id),
+                          label: s.name,
+                        }))}
+                        className="w-full text-sm"
+                      />
+                    ) : (
+                      <Badge>{task.status?.name}</Badge>
+                    )}
+                  </Meta>
 
-          {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+                  <Meta label="Приоритет">
+                    {writable ? (
+                      <PrioritySelect
+                        value={task.priority}
+                        onChange={(v) => void saveField({ priority: v })}
+                        disabled={saving}
+                      />
+                    ) : (
+                      PRIORITY_LABELS[task.priority]
+                    )}
+                  </Meta>
 
-          <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="min-w-0 space-y-4">
+                  <Meta label="Исполнители">
+                    {writable ? (
+                      <DropdownMenu
+                        modal={false}
+                        open={assigneePickerOpen}
+                        onOpenChange={setAssigneePickerOpen}
+                      >
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            disabled={saving}
+                            className="inline-flex items-center outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+                            title="Выбрать исполнителей"
+                          >
+                            <AssigneeStack task={task} size="sm" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="start"
+                          className="w-52 p-0"
+                          data-assignee-picker
+                          onCloseAutoFocus={(e) => e.preventDefault()}
+                        >
+                          <DropdownMenuItem
+                            disabled={saving}
+                            className="mx-1 mt-1 text-muted-foreground"
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setAssigneeDraftIds([]);
+                              void applyAssigneeDraft([]);
+                            }}
+                          >
+                            <EmptyAssigneeAvatar size="sm" />
+                            Без исполнителей
+                          </DropdownMenuItem>
+                          {users.map((u) => {
+                            const selected = assigneeDraftIds.includes(u.id);
+                            return (
+                              <DropdownMenuCheckboxItem
+                                key={u.id}
+                                checked={selected}
+                                disabled={saving}
+                                className="mx-1"
+                                onSelect={(e) => e.preventDefault()}
+                                onCheckedChange={(checked) => {
+                                  setAssigneeDraftIds((prev) =>
+                                    checked
+                                      ? prev.includes(u.id)
+                                        ? prev
+                                        : [...prev, u.id]
+                                      : prev.filter((id) => id !== u.id),
+                                  );
+                                }}
+                              >
+                                <UserAvatar user={u} size="sm" />
+                                <span className="min-w-0 flex-1 truncate">
+                                  {displayName(u)}
+                                </span>
+                              </DropdownMenuCheckboxItem>
+                            );
+                          })}
+                          <DropdownMenuSeparator />
+                          <div className="p-1.5">
+                            <button
+                              type="button"
+                              disabled={saving}
+                              className="w-full rounded-md bg-primary px-2 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                              onClick={() =>
+                                void applyAssigneeDraft(assigneeDraftIds)
+                              }
+                            >
+                              Применить
+                            </button>
+                          </div>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      <AssigneeStack task={task} size="sm" />
+                    )}
+                  </Meta>
+
+                  <Meta label="Дедлайн">
+                    {writable ? (
+                      <DeadlinePicker
+                        value={task.deadline}
+                        disabled={saving}
+                        size="sm"
+                        onChange={(next) =>
+                          void saveField({
+                            deadline: next || null,
+                          })
+                        }
+                      />
+                    ) : (
+                      formatDate(task.deadline)
+                    )}
+                  </Meta>
+
+                  <Meta label="Привязать к релизу">
+                    {writable ? (
+                      <ReleasePicker
+                        value={task.releaseId}
+                        releases={releases}
+                        disabled={saving}
+                        onChange={(next) => void saveField({ releaseId: next })}
+                      />
+                    ) : (
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <Rocket className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">
+                          {task.release?.name || 'Не привязан'}
+                        </span>
+                      </span>
+                    )}
+                  </Meta>
+
+                  <div className="my-2 border-t border-border/70" />
+
+                  <Meta label="Создана" muted>
+                    {formatDate(task.createdAt)}
+                  </Meta>
+                  <Meta label="В статусе" muted>
+                    {formatDuration(task.statusChangedAt)}
+                  </Meta>
+                  <Meta label="Автор" muted>
+                    {displayName(task.createdBy)}
+                  </Meta>
+                </div>
+              </div>
+            </aside>
+
+            <div
+              ref={isLgLayout ? modalBodyRef : undefined}
+              className={cn(
+                'min-w-0',
+                isLgLayout
+                  ? 'absolute inset-0 overflow-y-auto overscroll-contain px-[280px] pb-6 pt-2 [scrollbar-gutter:stable]'
+                  : undefined,
+              )}
+            >
+            <div className="space-y-4">
               <div className="space-y-2">
-                <div className="flex h-8 items-center justify-between gap-2">
-                  <Label className="mb-0">Описание</Label>
+                <div className="flex h-8 items-center gap-2">
                   {writable &&
                     !editingDescription &&
                     !!task.description?.trim() && (
@@ -888,7 +1317,7 @@ export function TaskModal({
                         type="button"
                         variant="outline"
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-8 w-8 shrink-0"
                         title="Редактировать описание"
                         onClick={() => {
                           setDescriptionDraft(task.description || '');
@@ -898,6 +1327,7 @@ export function TaskModal({
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
                     )}
+                  <Label className="mb-0">Описание</Label>
                 </div>
 
                 <div className="min-h-[192px]">
@@ -1509,187 +1939,53 @@ export function TaskModal({
                 </div>
               </div>
             </div>
+            </div>
 
-            <aside className="h-fit min-w-0 space-y-3 rounded-xl border border-border bg-background/50 p-3">
-              <Meta label="Статус">
-                {writable ? (
-                  <AppSelect
-                    value={String(task.statusId)}
-                    onValueChange={(v) => void changeStatus(Number(v))}
-                    options={(project?.statuses || []).map((s) => ({
-                      value: String(s.id),
-                      label: s.name,
-                    }))}
-                    className="w-full text-sm"
-                  />
-                ) : (
-                  <Badge>{task.status?.name}</Badge>
-                )}
-              </Meta>
-
-              <Meta label="Приоритет">
-                {writable ? (
-                  <AppSelect
-                    value={task.priority}
-                    onValueChange={(v) => saveField({ priority: v })}
-                    options={Object.entries(PRIORITY_LABELS).map(([k, v]) => ({
-                      value: k,
-                      label: v,
-                    }))}
-                    className="w-full text-sm"
-                  />
-                ) : (
-                  PRIORITY_LABELS[task.priority]
-                )}
-              </Meta>
-
-              <Meta label="Исполнители">
-                {writable ? (
-                  <DropdownMenu
-                    modal={false}
-                    open={assigneePickerOpen}
-                    onOpenChange={setAssigneePickerOpen}
-                  >
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        disabled={saving}
-                        className="inline-flex items-center outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
-                        title="Выбрать исполнителей"
-                      >
-                        <AssigneeStack task={task} size="sm" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="start"
-                      className="w-52 p-0"
-                      data-assignee-picker
-                      onCloseAutoFocus={(e) => e.preventDefault()}
-                    >
-                      <DropdownMenuItem
-                        disabled={saving}
-                        className="mx-1 mt-1 text-muted-foreground"
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          setAssigneeDraftIds([]);
-                          void applyAssigneeDraft([]);
-                        }}
-                      >
-                        <EmptyAssigneeAvatar size="sm" />
-                        Без исполнителей
-                      </DropdownMenuItem>
-                      {users.map((u) => {
-                        const selected = assigneeDraftIds.includes(u.id);
-                        return (
-                          <DropdownMenuCheckboxItem
-                            key={u.id}
-                            checked={selected}
-                            disabled={saving}
-                            className="mx-1"
-                            onSelect={(e) => e.preventDefault()}
-                            onCheckedChange={(checked) => {
-                              setAssigneeDraftIds((prev) =>
-                                checked
-                                  ? prev.includes(u.id)
-                                    ? prev
-                                    : [...prev, u.id]
-                                  : prev.filter((id) => id !== u.id),
-                              );
-                            }}
-                          >
-                            <UserAvatar user={u} size="sm" />
-                            <span className="min-w-0 flex-1 truncate">
-                              {displayName(u)}
-                            </span>
-                          </DropdownMenuCheckboxItem>
-                        );
-                      })}
-                      <DropdownMenuSeparator />
-                      <div className="p-1.5">
-                        <button
-                          type="button"
-                          disabled={saving}
-                          className="w-full rounded-md bg-primary px-2 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                          onClick={() => void applyAssigneeDraft(assigneeDraftIds)}
-                        >
-                          Применить
-                        </button>
-                      </div>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : (
-                  <AssigneeStack task={task} size="sm" />
-                )}
-              </Meta>
-
-              <Meta label="Дедлайн">
-                {writable ? (
-                  <Input
-                    type="date"
-                    value={task.deadline ? task.deadline.slice(0, 10) : ''}
-                    onChange={(e) =>
-                      saveField({
-                        deadline: e.target.value
-                          ? new Date(e.target.value).toISOString()
-                          : null,
-                      })
+            <aside
+              className={cn(
+                'flex min-h-0 min-w-0 flex-col gap-8',
+                isLgLayout
+                  ? 'absolute right-6 top-2 z-[1] w-[240px] overflow-hidden'
+                  : 'mt-4',
+              )}
+              style={
+                isLgLayout
+                  ? {
+                      height:
+                        scrollPortH > 32
+                          ? scrollPortH - 32
+                          : 'calc(100% - 0.5rem)',
                     }
-                  />
-                ) : (
-                  formatDate(task.deadline)
-                )}
-              </Meta>
-
-              <Meta label="Создана">{formatDate(task.createdAt)}</Meta>
-
-              <Meta label="В статусе">
-                {formatDuration(task.statusChangedAt)}
-              </Meta>
-              <Meta label="Автор">{displayName(task.createdBy)}</Meta>
-
-              <div className="space-y-2 border-t border-border pt-3">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                  История статусов
+                  : undefined
+              }
+              onWheel={(e) => {
+                // Keep wheel on the history panel — do not scroll the main modal body.
+                e.stopPropagation();
+              }}
+            >
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background/40">
+                <div className="shrink-0 border-b border-border px-3 py-2">
+                  <div className="text-sm font-medium">История изменений</div>
                 </div>
-                {(task.statusHistory || []).length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
+                {(task.changeHistory || []).length === 0 ? (
+                  <p className="flex flex-1 items-start px-3 py-3 text-xs text-muted-foreground">
                     Пока нет записей
                   </p>
                 ) : (
-                  <ul className="max-h-52 space-y-2.5 overflow-y-auto pr-1">
-                    {(task.statusHistory || []).map((entry) => (
+                  <ul
+                    className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-2 py-2"
+                    onWheel={(e) => e.stopPropagation()}
+                  >
+                    {(task.changeHistory || []).map((entry) => (
                       <li
                         key={entry.id}
-                        className="rounded-md border border-border/60 bg-background/40 px-2.5 py-2"
+                        className="rounded-md px-2 py-2 hover:bg-muted/40"
                       >
                         <div className="flex items-start gap-2">
                           <UserAvatar user={entry.user} size="sm" />
                           <div className="min-w-0 flex-1">
                             <p className="text-xs leading-snug">
-                              <span className="font-medium">
-                                {displayName(entry.user)}
-                              </span>
-                              {entry.fromStatusName ? (
-                                <>
-                                  {' '}
-                                  перевёл из{' '}
-                                  <span className="font-medium">
-                                    «{entry.fromStatusName}»
-                                  </span>{' '}
-                                  в{' '}
-                                  <span className="font-medium">
-                                    «{entry.toStatusName}»
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  {' '}
-                                  установил статус{' '}
-                                  <span className="font-medium">
-                                    «{entry.toStatusName}»
-                                  </span>
-                                </>
-                              )}
+                              {renderChangeHistoryText(entry)}
                             </p>
                             <p className="mt-0.5 text-[11px] text-muted-foreground">
                               {formatChatTime(entry.createdAt)}
@@ -1703,7 +1999,7 @@ export function TaskModal({
               </div>
 
               {writable && (
-                <div className="space-y-2 pt-2">
+                <div className="flex shrink-0 flex-col gap-2">
                   <Button
                     className="w-full"
                     variant="secondary"
@@ -1843,16 +2139,25 @@ export function TaskModal({
 function Meta({
   label,
   children,
+  muted = false,
 }: {
   label: string;
   children: React.ReactNode;
+  muted?: boolean;
 }) {
   return (
-    <div>
-      <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
+    <div className="border-b border-border/60 py-2.5 last:border-b-0">
+      <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">
         {label}
       </div>
-      <div className="text-sm">{children}</div>
+      <div
+        className={cn(
+          'text-sm leading-snug',
+          muted ? 'text-muted-foreground' : 'text-foreground',
+        )}
+      >
+        {children}
+      </div>
     </div>
   );
 }
