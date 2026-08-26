@@ -9,7 +9,9 @@ use App\Models\Notification;
 use App\Models\NotificationSubscription;
 use App\Models\Project;
 use App\Models\ProjectStatus;
+use App\Models\Release;
 use App\Models\Task;
+use App\Models\TaskChangeHistory;
 use App\Models\TaskStatusHistory;
 use App\Models\User;
 use App\Models\UserNotificationSettings;
@@ -230,6 +232,7 @@ class ApiPresenter
             'priority' => $task->priority,
             'deadline' => self::date($task->deadline),
             'projectId' => $task->project_id,
+            'releaseId' => $task->release_id,
             'statusId' => $task->status_id,
             'order' => $task->sort_order,
             'activeAssigneeId' => $task->active_assignee_id,
@@ -263,6 +266,14 @@ class ApiPresenter
             ];
         }
 
+        if ($task->relationLoaded('release') && $task->release) {
+            $data['release'] = [
+                'id' => $task->release->id,
+                'name' => $task->release->name,
+                'status' => $task->release->status,
+            ];
+        }
+
         if ($withComments && $task->relationLoaded('comments')) {
             $data['comments'] = $task->comments->map(fn ($c) => self::comment($c))->values()->all();
         }
@@ -270,6 +281,13 @@ class ApiPresenter
         if ($task->relationLoaded('statusHistories')) {
             $data['statusHistory'] = $task->statusHistories
                 ->map(fn (TaskStatusHistory $h) => self::statusHistory($h))
+                ->values()
+                ->all();
+        }
+
+        if ($task->relationLoaded('changeHistories')) {
+            $data['changeHistory'] = $task->changeHistories
+                ->map(fn (TaskChangeHistory $h) => self::changeHistory($h))
                 ->values()
                 ->all();
         }
@@ -291,6 +309,46 @@ class ApiPresenter
             'toStatusName' => $history->to_status_name,
             'createdAt' => self::date($history->created_at),
             'user' => self::publicUser($history->user),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function changeHistory(TaskChangeHistory $history): array
+    {
+        $payload = $history->payload ?? [];
+
+        return [
+            'id' => $history->id,
+            'type' => $history->type,
+            'payload' => [
+                'fromStatusName' => $payload['fromStatusName'] ?? null,
+                'toStatusName' => $payload['toStatusName'] ?? null,
+                'fromDeadline' => $payload['fromDeadline'] ?? null,
+                'toDeadline' => $payload['toDeadline'] ?? null,
+                'fromPriority' => $payload['fromPriority'] ?? null,
+                'toPriority' => $payload['toPriority'] ?? null,
+                'fileName' => $payload['fileName'] ?? null,
+                'targetUserId' => $payload['targetUserId'] ?? null,
+                'targetUserName' => $payload['targetUserName'] ?? null,
+                'targetUser' => isset($payload['targetUser']) && is_array($payload['targetUser'])
+                    ? [
+                        'id' => $payload['targetUser']['id'] ?? null,
+                        'username' => $payload['targetUser']['username'] ?? null,
+                        'firstName' => $payload['targetUser']['firstName']
+                            ?? $payload['targetUser']['first_name']
+                            ?? null,
+                        'lastName' => $payload['targetUser']['lastName']
+                            ?? $payload['targetUser']['last_name']
+                            ?? null,
+                    ]
+                    : null,
+            ],
+            'createdAt' => self::date($history->created_at),
+            'user' => $history->relationLoaded('user') && $history->user
+                ? self::publicUser($history->user)
+                : null,
         ];
     }
 
@@ -427,6 +485,38 @@ class ApiPresenter
             'pauseElapsedSeconds' => $currentPauseSeconds,
             'totalPauseSeconds' => $totalPauseSeconds,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function release(Release $release, bool $withTasks = false): array
+    {
+        $data = [
+            'id' => $release->id,
+            'name' => $release->name,
+            'description' => $release->description,
+            'status' => $release->status,
+            'targetDate' => $release->target_date?->format('Y-m-d'),
+            'releasedAt' => self::date($release->released_at),
+            'createdById' => $release->created_by_id,
+            'createdBy' => $release->relationLoaded('createdBy') && $release->createdBy
+                ? self::publicUser($release->createdBy)
+                : null,
+            'sortOrder' => $release->sort_order,
+            'tasksCount' => $release->tasks_count ?? ($release->relationLoaded('tasks') ? $release->tasks->count() : 0),
+            'createdAt' => self::date($release->created_at),
+            'updatedAt' => self::date($release->updated_at),
+        ];
+
+        if ($withTasks && $release->relationLoaded('tasks')) {
+            $data['tasks'] = $release->tasks
+                ->map(fn (Task $t) => self::task($t))
+                ->values()
+                ->all();
+        }
+
+        return $data;
     }
 
     private static function date(mixed $value): ?string

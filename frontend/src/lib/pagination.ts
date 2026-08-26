@@ -8,6 +8,7 @@ export const PAGINATION_PAGE_SIZE_KEYS = {
   notifications: 'boevtracker.pagination.pageSize.notifications',
   usersPending: 'boevtracker.pagination.pageSize.usersPending',
   usersActive: 'boevtracker.pagination.pageSize.usersActive',
+  releases: 'boevtracker.pagination.pageSize.releases',
 } as const;
 
 export type PaginatedResult<T> = {

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, ListTodo } from 'lucide-react';
 import { api, taskActiveAssignee, type Project, type Task, type User } from '@/lib/api';
 import { canWrite, useAuthStore } from '@/store/auth';
@@ -22,6 +22,7 @@ import { AssigneeStack } from '@/components/assignee-stack';
 import { PaginationControls } from '@/components/pagination-controls';
 import { usePagination } from '@/hooks/use-pagination';
 import { paginateList, PAGINATION_PAGE_SIZE_KEYS } from '@/lib/pagination';
+import { ReleasesPanel } from '@/pages/releases';
 
 const priorityColor: Record<string, string> = {
   LOW: 'border-slate-500/40 text-slate-600 dark:text-slate-300',
@@ -30,7 +31,126 @@ const priorityColor: Record<string, string> = {
   CRITICAL: 'border-red-500/40 text-red-700 dark:text-red-300',
 };
 
+type TasksTab = 'list' | 'releases';
+
+const TAB_STORAGE_KEY = 'boevtracker.tasks.tab';
+
+function readTab(): TasksTab {
+  try {
+    const raw = localStorage.getItem(TAB_STORAGE_KEY);
+    if (raw === 'list' || raw === 'releases') return raw;
+  } catch {
+    // ignore
+  }
+  return 'list';
+}
+
 export function TasksPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTabState] = useState<TasksTab>(() => {
+    const fromUrl = searchParams.get('tab');
+    if (fromUrl === 'list' || fromUrl === 'releases') return fromUrl;
+    return readTab();
+  });
+
+  const setTab = useCallback(
+    (next: TasksTab) => {
+      setTabState(next);
+      try {
+        localStorage.setItem(TAB_STORAGE_KEY, next);
+      } catch {
+        // ignore
+      }
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          params.set('tab', next);
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  useEffect(() => {
+    const fromUrl = searchParams.get('tab');
+    if (fromUrl === 'list' || fromUrl === 'releases') {
+      setTabState((current) => (current === fromUrl ? current : fromUrl));
+      try {
+        localStorage.setItem(TAB_STORAGE_KEY, fromUrl);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (params.get('tab') === tab) return prev;
+        params.set('tab', tab);
+        return params;
+      },
+      { replace: true },
+    );
+  }, [searchParams, setSearchParams, tab]);
+
+  return (
+    <div>
+      <PageHeader
+        title="Задачи"
+        description="Список задач и релизы"
+      />
+
+      <div
+        className="mb-4 inline-flex rounded-lg border border-border bg-muted/30 p-1"
+        role="tablist"
+        aria-label="Разделы задач"
+      >
+        <TabButton active={tab === 'list'} onClick={() => setTab('list')}>
+          Список задач
+        </TabButton>
+        <TabButton
+          active={tab === 'releases'}
+          onClick={() => setTab('releases')}
+        >
+          Релизы
+        </TabButton>
+      </div>
+
+      {tab === 'releases' ? <ReleasesPanel /> : <TasksListPanel />}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      className={cn(
+        'rounded-md px-3 py-1.5 text-sm transition-colors',
+        active
+          ? 'bg-background text-foreground shadow-sm'
+          : 'text-muted-foreground hover:text-foreground',
+      )}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TasksListPanel() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const writable = canWrite(user?.role);
@@ -97,6 +217,17 @@ export function TasksPage() {
       .map((p) => ({ value: String(p.id), label: p.name }));
   }, [tasks, view.board]);
 
+  const statuses = useMemo(() => {
+    const names = new Set<string>();
+    for (const task of tasks) {
+      const name = task.status?.name?.trim();
+      if (name) names.add(name);
+    }
+    return [...names]
+      .sort((a, b) => a.localeCompare(b, 'ru'))
+      .map((name) => ({ value: name, label: name }));
+  }, [tasks]);
+
   useEffect(() => {
     if (loading) return;
 
@@ -113,8 +244,25 @@ export function TasksPage() {
       !projects.some((p) => p.value === view.project)
     ) {
       setView((prev) => ({ ...prev, project: 'all' }));
+      return;
     }
-  }, [loading, boards, projects, view.board, view.project, setView]);
+
+    if (
+      view.status !== 'all' &&
+      !statuses.some((s) => s.value === view.status)
+    ) {
+      setView((prev) => ({ ...prev, status: 'all' }));
+    }
+  }, [
+    loading,
+    boards,
+    projects,
+    statuses,
+    view.board,
+    view.project,
+    view.status,
+    setView,
+  ]);
 
   const visibleTasks = useMemo(
     () => applyTaskView(tasks, view),
@@ -169,11 +317,6 @@ export function TasksPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Задачи"
-        description="Все задачи на всех досках и проектах"
-      />
-
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
       <TaskViewControls
@@ -182,6 +325,7 @@ export function TasksPage() {
         users={users}
         boards={boards}
         projects={projects}
+        statuses={statuses}
         showSort={false}
         className="mb-4"
       />
@@ -338,7 +482,7 @@ export function TasksPage() {
                       <span className="truncate text-muted-foreground">
                         {taskActiveAssignee(task)
                           ? displayName(taskActiveAssignee(task))
-                          : 'Без исполнителя'}
+                          : 'Нет исполнителя'}
                       </span>
                     </div>
                   </td>

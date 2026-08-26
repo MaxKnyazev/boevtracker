@@ -7,6 +7,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\RealtimeController;
+use App\Http\Controllers\ReleaseController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\StatusController;
 use App\Http\Controllers\TaskController;
@@ -91,6 +92,16 @@ Route::middleware(AuthenticateJwt::class)->group(function () {
     Route::patch('/comments/{id}', [TaskController::class, 'updateComment'])->whereNumber('id');
     Route::delete('/comments/{id}', [TaskController::class, 'deleteComment'])->whereNumber('id');
     Route::post('/tasks/{id}/files', [TaskController::class, 'uploadTaskFiles'])->whereNumber('id');
+
+    Route::get('/releases', [ReleaseController::class, 'index']);
+    Route::post('/releases', [ReleaseController::class, 'store']);
+    Route::get('/releases/{id}', [ReleaseController::class, 'show'])->whereNumber('id');
+    Route::patch('/releases/{id}', [ReleaseController::class, 'update'])->whereNumber('id');
+    Route::delete('/releases/{id}', [ReleaseController::class, 'destroy'])->whereNumber('id');
+    Route::post('/releases/{id}/tasks', [ReleaseController::class, 'attachTasks'])->whereNumber('id');
+    Route::delete('/releases/{id}/tasks/{taskId}', [ReleaseController::class, 'detachTask'])
+        ->whereNumber('id')
+        ->whereNumber('taskId');
 
     Route::post('/comments/{id}/files', [TaskController::class, 'uploadCommentFiles'])->whereNumber('id');
     Route::get('/attachments/{id}', [TaskController::class, 'downloadAttachment'])->whereNumber('id');

@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard,
   Users,
   LogOut,
   FolderKanban,
-  ListTodo,
   Bell,
-  Clock,
   PanelLeftClose,
   PanelLeft,
 } from 'lucide-react';
@@ -17,6 +14,9 @@ import { useShiftStore } from '@/store/shifts';
 import { NotificationWatcher } from '@/components/notification-watcher';
 import { UploadProgressDock } from '@/components/upload-progress-dock';
 import { ShiftControls } from '@/components/shift-controls';
+import { BoardsNav } from '@/components/boards-nav';
+import { TasksNav } from '@/components/tasks-nav';
+import { TimeNav } from '@/components/time-nav';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ROLE_LABELS, cn } from '@/lib/utils';
@@ -75,7 +75,7 @@ export function AppLayout() {
           )}
         >
           <div className={cn(collapsed && 'text-center')}>
-            <div className="text-xl font-bold tracking-tight">
+            <div className="logo-font text-xl tracking-tight">
               {collapsed ? (
                 <>
                   <span className="text-primary">B</span>
@@ -110,19 +110,10 @@ export function AppLayout() {
           </Button>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-1">
-          <NavLink to="/" end className={linkClass} title="Доски">
-            <LayoutDashboard className="h-4 w-4 shrink-0" />
-            {!collapsed && 'Доски'}
-          </NavLink>
-          <NavLink to="/tasks" className={linkClass} title="Задачи">
-            <ListTodo className="h-4 w-4 shrink-0" />
-            {!collapsed && 'Задачи'}
-          </NavLink>
-          <NavLink to="/time" className={linkClass} title="Учет времени">
-            <Clock className="h-4 w-4 shrink-0" />
-            {!collapsed && 'Учет времени'}
-          </NavLink>
+        <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+          <BoardsNav collapsed={collapsed} />
+          <TasksNav collapsed={collapsed} />
+          <TimeNav collapsed={collapsed} />
           <NavLink to="/notifications" className={linkClass} title="Уведомления">
             <span className="relative shrink-0">
               <Bell className="h-4 w-4" />

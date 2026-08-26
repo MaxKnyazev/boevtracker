@@ -146,6 +146,19 @@ export function BoardDetailPage() {
     (p) => !hiddenProjectIds.has(p.id),
   );
 
+  const overviewStatuses = useMemo(() => {
+    const names = new Set<string>();
+    for (const project of overviewProjects) {
+      for (const status of project.statuses || []) {
+        const name = status.name?.trim();
+        if (name) names.add(name);
+      }
+    }
+    return [...names]
+      .sort((a, b) => a.localeCompare(b, 'ru'))
+      .map((name) => ({ value: name, label: name }));
+  }, [overviewProjects]);
+
   const setTab = (tab: string) => {
     setSearchParams(tab === OVERVIEW_TAB ? {} : { tab });
   };
@@ -397,6 +410,7 @@ export function BoardDetailPage() {
                 view={overviewView}
                 onChange={setOverviewView}
                 users={users}
+                statuses={overviewStatuses}
               />
               {overviewProjects.map((project, index) => (
                 <ProjectBlock

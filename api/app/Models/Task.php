@@ -15,6 +15,7 @@ class Task extends Model
         'priority',
         'deadline',
         'project_id',
+        'release_id',
         'status_id',
         'active_assignee_id',
         'created_by_id',
@@ -30,6 +31,11 @@ class Task extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function release(): BelongsTo
+    {
+        return $this->belongsTo(Release::class);
     }
 
     public function status(): BelongsTo
@@ -67,6 +73,11 @@ class Task extends Model
     public function statusHistories(): HasMany
     {
         return $this->hasMany(TaskStatusHistory::class)->orderByDesc('created_at');
+    }
+
+    public function changeHistories(): HasMany
+    {
+        return $this->hasMany(TaskChangeHistory::class)->orderByDesc('created_at');
     }
 
     public function workIntervals(): HasMany

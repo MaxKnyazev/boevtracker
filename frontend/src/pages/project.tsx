@@ -37,18 +37,9 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { api, type Board, type Project, type ProjectStatus, type Task, type User } from '@/lib/api';
-import { canWrite, useAuthStore } from '@/store/auth';
-import { PageHeader } from '@/components/layout';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input, Label } from '@/components/ui/input';
-import { MentionsTextarea } from '@/components/mentions-textarea';
-import { TaskCard } from '@/components/task-card';
-import { TaskModal } from '@/components/task-modal';
-import { MoveBoardDialog } from '@/components/move-board-dialog';
-import { MoveProjectDialog } from '@/components/move-project-dialog';
-import { TaskViewControls } from '@/components/task-view-controls';
+import { DeadlinePicker } from '@/components/deadline-picker';
+import { PrioritySelect } from '@/components/priority-select';
+import { ReleasePicker } from '@/components/release-picker';
 import { ChooseActiveAssigneeDialog } from '@/components/choose-active-assignee-dialog';
 import { CloseTaskDialog } from '@/components/close-task-dialog';
 import {
@@ -57,6 +48,27 @@ import {
   PendingFileChip,
   extractClipboardFiles,
 } from '@/components/file-drop-zone';
+import { MentionsTextarea } from '@/components/mentions-textarea';
+import { TaskCard } from '@/components/task-card';
+import { TaskModal } from '@/components/task-modal';
+import { MoveBoardDialog } from '@/components/move-board-dialog';
+import { MoveProjectDialog } from '@/components/move-project-dialog';
+import { TaskViewControls } from '@/components/task-view-controls';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input, Label } from '@/components/ui/input';
+import { PageHeader } from '@/components/layout';
+import {
+  api,
+  type Board,
+  type Priority,
+  type Project,
+  type ProjectStatus,
+  type Release,
+  type Task,
+  type User,
+} from '@/lib/api';
+import { canWrite, useAuthStore } from '@/store/auth';
 import { useUploadsStore } from '@/store/uploads';
 import {
   applyTaskView,
@@ -232,8 +244,10 @@ export function ProjectPage({
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState('MEDIUM');
-  const [deadline, setDeadline] = useState('');
+  const [priority, setPriority] = useState<Priority>('MEDIUM');
+  const [deadline, setDeadline] = useState<string | null>(null);
+  const [releaseId, setReleaseId] = useState<string>('');
+  const [releases, setReleases] = useState<Release[]>([]);
   const [createFiles, setCreateFiles] = useState<File[]>([]);
   const [creating, setCreating] = useState(false);
   const [pendingMove, setPendingMove] = useState<{
@@ -547,11 +561,28 @@ export function ProjectPage({
     }
   };
 
+  useEffect(() => {
+    if (!createOpen) return;
+    let cancelled = false;
+    void api
+      .releases()
+      .then((res) => {
+        if (!cancelled) setReleases(res.releases);
+      })
+      .catch(() => {
+        if (!cancelled) setReleases([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [createOpen]);
+
   const resetCreateForm = () => {
     setTitle('');
     setDescription('');
     setPriority('MEDIUM');
-    setDeadline('');
+    setDeadline(null);
+    setReleaseId('');
     setCreateFiles([]);
   };
 
@@ -596,8 +627,9 @@ export function ProjectPage({
       const res = await api.createTask(project.id, {
         title: taskTitle,
         description: description.trim() || undefined,
-        priority: priority as Task['priority'],
-        deadline: deadline ? new Date(deadline).toISOString() : null,
+        priority,
+        deadline: deadline || null,
+        releaseId: releaseId ? Number(releaseId) : null,
       });
       resetCreateForm();
       setCreateOpen(false);
@@ -761,6 +793,10 @@ export function ProjectPage({
                     view={taskView}
                     onChange={setTaskView}
                     users={viewUsers}
+                    statuses={(project?.statuses || []).map((s) => ({
+                      value: s.name,
+                      label: s.name,
+                    }))}
                   />
                 )}
               </div>
@@ -779,6 +815,10 @@ export function ProjectPage({
                   view={taskView}
                   onChange={setTaskView}
                   users={viewUsers}
+                  statuses={(project?.statuses || []).map((s) => ({
+                    value: s.name,
+                    label: s.name,
+                  }))}
                   className="mb-4"
                 />
               )}
@@ -1069,30 +1109,37 @@ export function ProjectPage({
                 className="min-h-[120px] resize-y"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Приоритет</Label>
-                <select
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                <PrioritySelect
                   value={priority}
-                  onChange={(e) => setPriority(e.target.value)}
+                  onChange={setPriority}
                   disabled={creating}
-                >
-                  <option value="LOW">Низкий</option>
-                  <option value="MEDIUM">Средний</option>
-                  <option value="HIGH">Высокий</option>
-                  <option value="CRITICAL">Критический</option>
-                </select>
+                  className="h-10"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Дедлайн</Label>
-                <Input
-                  type="date"
+                <DeadlinePicker
                   value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
                   disabled={creating}
+                  onChange={setDeadline}
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Релиз</Label>
+              <ReleasePicker
+                value={releaseId ? Number(releaseId) : null}
+                releases={releases}
+                disabled={creating}
+                size="md"
+                emptyLabel="Не привязан"
+                onChange={(next) =>
+                  setReleaseId(next != null ? String(next) : '')
+                }
+              />
             </div>
             <div className="space-y-2">
               <Label>Файлы</Label>

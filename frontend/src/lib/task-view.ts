@@ -28,8 +28,6 @@ export type DeadlineFilter =
   | 'overdue'
   | 'week';
 
-export type StatusTimeFilter = 'all' | '1d' | '3d' | '7d' | '30d';
-
 export type TaskViewState = {
   sortField: TaskSortField;
   sortDir: TaskSortDir;
@@ -39,7 +37,8 @@ export type TaskViewState = {
   project: string;
   priority: string; // 'all' | Priority
   deadline: DeadlineFilter;
-  statusTime: StatusTimeFilter;
+  /** 'all' | status name */
+  status: string;
   /** 'all' | 'none' | user id as string */
   assignee: string;
 };
@@ -51,7 +50,7 @@ export const DEFAULT_TASK_VIEW: TaskViewState = {
   project: 'all',
   priority: 'all',
   deadline: 'all',
-  statusTime: 'all',
+  status: 'all',
   assignee: 'all',
 };
 
@@ -83,13 +82,6 @@ const DEADLINE_FILTERS: ReadonlySet<string> = new Set([
   'overdue',
   'week',
 ]);
-const STATUS_TIME_FILTERS: ReadonlySet<string> = new Set([
-  'all',
-  '1d',
-  '3d',
-  '7d',
-  '30d',
-]);
 
 function parseTaskView(raw: unknown): TaskViewState | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -104,9 +96,6 @@ function parseTaskView(raw: unknown): TaskViewState | null {
   const deadline = DEADLINE_FILTERS.has(String(v.deadline))
     ? (v.deadline as DeadlineFilter)
     : DEFAULT_TASK_VIEW.deadline;
-  const statusTime = STATUS_TIME_FILTERS.has(String(v.statusTime))
-    ? (v.statusTime as StatusTimeFilter)
-    : DEFAULT_TASK_VIEW.statusTime;
 
   const asIdOrAll = (value: unknown, allowNone = false): string => {
     if (value === 'all') return 'all';
@@ -134,6 +123,11 @@ function parseTaskView(raw: unknown): TaskViewState | null {
       ? String(v.priority)
       : DEFAULT_TASK_VIEW.priority;
 
+  const status =
+    typeof v.status === 'string' && v.status.trim() !== ''
+      ? v.status.trim()
+      : DEFAULT_TASK_VIEW.status;
+
   return {
     sortField,
     sortDir,
@@ -141,7 +135,7 @@ function parseTaskView(raw: unknown): TaskViewState | null {
     project: asIdOrAll(v.project),
     priority,
     deadline,
-    statusTime,
+    status,
     assignee: asIdOrAll(v.assignee, true),
   };
 }
@@ -210,7 +204,7 @@ export function hasActiveTaskView(view: TaskViewState): boolean {
     view.project !== 'all' ||
     view.priority !== 'all' ||
     view.deadline !== 'all' ||
-    view.statusTime !== 'all' ||
+    view.status !== 'all' ||
     view.assignee !== 'all'
   );
 }
@@ -230,16 +224,9 @@ function matchesDeadline(task: Task, filter: DeadlineFilter): boolean {
   return true;
 }
 
-function matchesStatusTime(task: Task, filter: StatusTimeFilter): boolean {
+function matchesStatus(task: Task, filter: string): boolean {
   if (filter === 'all') return true;
-  const age = Date.now() - new Date(task.statusChangedAt).getTime();
-  const map: Record<Exclude<StatusTimeFilter, 'all'>, number> = {
-    '1d': DAY_MS,
-    '3d': 3 * DAY_MS,
-    '7d': 7 * DAY_MS,
-    '30d': 30 * DAY_MS,
-  };
-  return age >= map[filter];
+  return (task.status?.name || '') === filter;
 }
 
 function matchesAssignee(task: Task, filter: string): boolean {
@@ -262,7 +249,7 @@ export function filterTasks(tasks: Task[], view: TaskViewState): Task[] {
     }
     if (view.priority !== 'all' && task.priority !== view.priority) return false;
     if (!matchesDeadline(task, view.deadline)) return false;
-    if (!matchesStatusTime(task, view.statusTime)) return false;
+    if (!matchesStatus(task, view.status)) return false;
     if (!matchesAssignee(task, view.assignee)) return false;
     return true;
   });
