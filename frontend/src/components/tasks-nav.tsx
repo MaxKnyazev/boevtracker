@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { ChevronDown, ListTodo } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -38,12 +38,6 @@ export function TasksNav({ collapsed }: { collapsed: boolean }) {
   const [open, setOpen] = useState(readTasksExpanded);
   const currentTab = activeTasksTab(location.pathname, location.search);
   const sectionActive = currentTab != null;
-
-  useEffect(() => {
-    if (!sectionActive) return;
-    setOpen(true);
-    writeTasksExpanded(true);
-  }, [sectionActive]);
 
   const toggle = () => {
     setOpen((prev) => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { ChevronDown, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -38,12 +38,6 @@ export function TimeNav({ collapsed }: { collapsed: boolean }) {
   const [open, setOpen] = useState(readTimeExpanded);
   const currentTab = activeTimeTab(location.pathname, location.search);
   const sectionActive = currentTab != null;
-
-  useEffect(() => {
-    if (!sectionActive) return;
-    setOpen(true);
-    writeTimeExpanded(true);
-  }, [sectionActive]);
 
   const toggle = () => {
     setOpen((prev) => {

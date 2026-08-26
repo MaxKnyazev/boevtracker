@@ -84,20 +84,6 @@ export function BoardsNav({
     }
   }, [location.pathname, loadBoards]);
 
-  // Auto-open tree for the current board route.
-  useEffect(() => {
-    if (routeBoardId == null || !Number.isFinite(routeBoardId)) return;
-    setBoardsOpen(true);
-    writeBoardsExpanded(true);
-    setExpandedBoardIds((prev) => {
-      if (prev.has(routeBoardId)) return prev;
-      const next = new Set(prev);
-      next.add(routeBoardId);
-      writeExpandedBoardIds(next);
-      return next;
-    });
-  }, [routeBoardId]);
-
   const activeProjectId = useMemo(() => {
     if (!location.pathname.startsWith('/boards/')) return null;
     const tab = new URLSearchParams(location.search).get('tab');
