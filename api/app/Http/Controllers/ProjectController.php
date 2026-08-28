@@ -118,6 +118,7 @@ class ProjectController extends Controller
                 'board',
                 'statuses',
                 'tasks' => fn ($q) => $q
+                    ->onBoard()
                     ->with(['assignees', 'activeAssignee', 'status', 'files'])
                     ->withCount('comments'),
             ])

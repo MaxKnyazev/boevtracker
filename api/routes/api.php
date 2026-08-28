@@ -8,6 +8,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\RealtimeController;
 use App\Http\Controllers\ReleaseController;
+use App\Http\Controllers\HelpController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\StatusController;
 use App\Http\Controllers\TaskController;
@@ -81,6 +82,7 @@ Route::middleware(AuthenticateJwt::class)->group(function () {
     Route::delete('/statuses/{id}', [StatusController::class, 'destroy'])->whereNumber('id');
 
     Route::get('/tasks', [TaskController::class, 'index']);
+    Route::get('/tasks/backlog', [TaskController::class, 'backlog']);
     Route::post('/projects/{projectId}/tasks', [TaskController::class, 'store'])->whereNumber('projectId');
     Route::get('/tasks/{id}', [TaskController::class, 'show'])->whereNumber('id');
     Route::patch('/tasks/{id}', [TaskController::class, 'update'])->whereNumber('id');
@@ -102,6 +104,25 @@ Route::middleware(AuthenticateJwt::class)->group(function () {
     Route::delete('/releases/{id}/tasks/{taskId}', [ReleaseController::class, 'detachTask'])
         ->whereNumber('id')
         ->whereNumber('taskId');
+
+    Route::get('/help/products', [HelpController::class, 'products']);
+    Route::post('/help/products', [HelpController::class, 'storeProduct']);
+    Route::put('/help/products/reorder', [HelpController::class, 'reorderProducts']);
+    Route::get('/help/products/{id}', [HelpController::class, 'showProduct'])->whereNumber('id');
+    Route::patch('/help/products/{id}', [HelpController::class, 'updateProduct'])->whereNumber('id');
+    Route::delete('/help/products/{id}', [HelpController::class, 'destroyProduct'])->whereNumber('id');
+    Route::post('/help/products/{id}/chapters', [HelpController::class, 'storeChapter'])->whereNumber('id');
+    Route::put('/help/products/{id}/chapters/reorder', [HelpController::class, 'reorderChapters'])->whereNumber('id');
+    Route::post('/help/products/{id}/files', [HelpController::class, 'uploadProductFiles'])->whereNumber('id');
+    Route::patch('/help/chapters/{id}', [HelpController::class, 'updateChapter'])->whereNumber('id');
+    Route::delete('/help/chapters/{id}', [HelpController::class, 'destroyChapter'])->whereNumber('id');
+    Route::post('/help/chapters/{id}/files', [HelpController::class, 'uploadChapterFiles'])->whereNumber('id');
+
+    Route::get('/help/notes', [HelpController::class, 'notes']);
+    Route::post('/help/notes', [HelpController::class, 'storeNote']);
+    Route::put('/help/notes/reorder', [HelpController::class, 'reorderNotes']);
+    Route::patch('/help/notes/{id}', [HelpController::class, 'updateNote'])->whereNumber('id');
+    Route::delete('/help/notes/{id}', [HelpController::class, 'destroyNote'])->whereNumber('id');
 
     Route::post('/comments/{id}/files', [TaskController::class, 'uploadCommentFiles'])->whereNumber('id');
     Route::get('/attachments/{id}', [TaskController::class, 'downloadAttachment'])->whereNumber('id');

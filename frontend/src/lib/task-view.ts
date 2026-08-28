@@ -56,6 +56,7 @@ export const DEFAULT_TASK_VIEW: TaskViewState = {
 
 export const taskViewStorageKey = {
   tasks: 'boevtracker.taskView.tasks',
+  backlog: 'boevtracker.taskView.backlog',
   board: (boardId: string | number) =>
     `boevtracker.taskView.board.${boardId}`,
   project: (projectId: string | number) =>

@@ -5,6 +5,9 @@ namespace App\Support;
 use App\Models\Attachment;
 use App\Models\Board;
 use App\Models\Comment;
+use App\Models\DocumentationChapter;
+use App\Models\DocumentationProduct;
+use App\Models\HelpNote;
 use App\Models\Notification;
 use App\Models\NotificationSubscription;
 use App\Models\Project;
@@ -130,7 +133,103 @@ class ApiPresenter
             'key' => $file->key,
             'taskId' => $file->task_id,
             'commentId' => $file->comment_id,
+            'documentationProductId' => $file->documentation_product_id,
+            'documentationChapterId' => $file->documentation_chapter_id,
             'createdAt' => self::date($file->created_at),
+        ];
+    }
+
+    public static function documentationChapter(
+        DocumentationChapter $chapter,
+        bool $withFiles = false,
+    ): array {
+        $data = [
+            'id' => $chapter->id,
+            'productId' => $chapter->product_id,
+            'title' => $chapter->title,
+            'body' => $chapter->body,
+            'sortOrder' => $chapter->sort_order,
+            'createdAt' => self::date($chapter->created_at),
+            'updatedAt' => self::date($chapter->updated_at),
+        ];
+
+        if ($withFiles && $chapter->relationLoaded('files')) {
+            $data['files'] = $chapter->files
+                ->map(fn (Attachment $f) => self::attachment($f))
+                ->values()
+                ->all();
+        } elseif ($chapter->relationLoaded('files')) {
+            $data['files'] = $chapter->files
+                ->map(fn (Attachment $f) => self::attachment($f))
+                ->values()
+                ->all();
+        }
+
+        return $data;
+    }
+
+    public static function documentationProduct(
+        DocumentationProduct $product,
+        bool $withChapters = false,
+        bool $withFiles = false,
+    ): array {
+        $data = [
+            'id' => $product->id,
+            'name' => $product->name,
+            'description' => $product->description,
+            'sortOrder' => $product->sort_order,
+            'createdById' => $product->created_by_id,
+            'createdBy' => $product->relationLoaded('createdBy') && $product->createdBy
+                ? self::publicUser($product->createdBy)
+                : null,
+            'chaptersCount' => $product->chapters_count
+                ?? ($product->relationLoaded('chapters') ? $product->chapters->count() : 0),
+            'createdAt' => self::date($product->created_at),
+            'updatedAt' => self::date($product->updated_at),
+        ];
+
+        if ($product->relationLoaded('chapters')) {
+            $data['toc'] = $product->chapters
+                ->map(fn (DocumentationChapter $c) => [
+                    'id' => $c->id,
+                    'title' => $c->title,
+                    'sortOrder' => $c->sort_order,
+                ])
+                ->values()
+                ->all();
+
+            if ($withChapters) {
+                $data['chapters'] = $product->chapters
+                    ->map(fn (DocumentationChapter $c) => self::documentationChapter($c, withFiles: true))
+                    ->values()
+                    ->all();
+            }
+        }
+
+        if ($withFiles && $product->relationLoaded('files')) {
+            $data['files'] = $product->files
+                ->map(fn (Attachment $f) => self::attachment($f))
+                ->values()
+                ->all();
+        }
+
+        return $data;
+    }
+
+    public static function helpNote(HelpNote $note): array
+    {
+        return [
+            'id' => $note->id,
+            'title' => $note->title,
+            'body' => $note->body,
+            'pinned' => (bool) $note->pinned,
+            'sortOrder' => $note->sort_order,
+            'createdById' => $note->created_by_id,
+            'createdBy' => $note->relationLoaded('createdBy') && $note->createdBy
+                ? self::publicUser($note->createdBy)
+                : null,
+            'createdAt' => self::date($note->created_at),
+            'updatedAt' => self::date($note->updated_at),
         ];
     }
 
@@ -235,6 +334,7 @@ class ApiPresenter
             'releaseId' => $task->release_id,
             'statusId' => $task->status_id,
             'order' => $task->sort_order,
+            'inBacklog' => (bool) $task->in_backlog,
             'activeAssigneeId' => $task->active_assignee_id,
             'statusChangedAt' => self::date($task->status_changed_at),
             'createdAt' => self::date($task->created_at),

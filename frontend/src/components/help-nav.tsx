@@ -1,51 +1,51 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { ChevronDown, ListTodo } from 'lucide-react';
+import { BookOpen, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const TASKS_EXPANDED_KEY = 'boevtracker.sidebar.tasksExpanded';
+const HELP_EXPANDED_KEY = 'boevtracker.sidebar.helpExpanded';
 
-const TASKS_TABS = [
-  { id: 'list', label: 'Список задач', to: '/tasks?tab=list' },
-  { id: 'backlog', label: 'Бэклог', to: '/tasks?tab=backlog' },
+const HELP_TABS = [
+  { id: 'docs', label: 'Документация', to: '/help?tab=docs' },
+  { id: 'notes', label: 'Заметки', to: '/help?tab=notes' },
 ] as const;
 
-function readTasksExpanded(): boolean {
+function readHelpExpanded(): boolean {
   try {
-    return localStorage.getItem(TASKS_EXPANDED_KEY) === '1';
+    return localStorage.getItem(HELP_EXPANDED_KEY) === '1';
   } catch {
     return false;
   }
 }
 
-function writeTasksExpanded(value: boolean) {
+function writeHelpExpanded(value: boolean) {
   try {
-    localStorage.setItem(TASKS_EXPANDED_KEY, value ? '1' : '0');
+    localStorage.setItem(HELP_EXPANDED_KEY, value ? '1' : '0');
   } catch {
     // ignore
   }
 }
 
-function activeTasksTab(
+function activeHelpTab(
   pathname: string,
   search: string,
-): 'list' | 'backlog' | null {
-  if (pathname !== '/tasks') return null;
+): 'docs' | 'notes' | null {
+  if (pathname !== '/help') return null;
   const tab = new URLSearchParams(search).get('tab');
-  if (tab === 'backlog') return 'backlog';
-  return 'list';
+  if (tab === 'notes') return 'notes';
+  return 'docs';
 }
 
-export function TasksNav({ collapsed }: { collapsed: boolean }) {
+export function HelpNav({ collapsed }: { collapsed: boolean }) {
   const location = useLocation();
-  const [open, setOpen] = useState(readTasksExpanded);
-  const currentTab = activeTasksTab(location.pathname, location.search);
+  const [open, setOpen] = useState(readHelpExpanded);
+  const currentTab = activeHelpTab(location.pathname, location.search);
   const sectionActive = currentTab != null;
 
   const toggle = () => {
     setOpen((prev) => {
       const next = !prev;
-      writeTasksExpanded(next);
+      writeHelpExpanded(next);
       return next;
     });
   };
@@ -53,7 +53,7 @@ export function TasksNav({ collapsed }: { collapsed: boolean }) {
   if (collapsed) {
     return (
       <NavLink
-        to="/tasks"
+        to="/help"
         className={() =>
           cn(
             'flex items-center justify-center rounded-lg px-2 py-2.5 text-sm transition-colors',
@@ -62,9 +62,9 @@ export function TasksNav({ collapsed }: { collapsed: boolean }) {
               : 'text-sidebar-foreground/80 hover:bg-sidebar-accent',
           )
         }
-        title="Задачи"
+        title="Справка"
       >
-        <ListTodo className="h-4 w-4 shrink-0" />
+        <BookOpen className="h-4 w-4 shrink-0" />
       </NavLink>
     );
   }
@@ -82,17 +82,17 @@ export function TasksNav({ collapsed }: { collapsed: boolean }) {
         )}
       >
         <NavLink
-          to="/tasks"
+          to="/help"
           className={cn(
             'flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors',
             sectionActive && !open
               ? 'text-primary-foreground'
               : 'hover:bg-sidebar-accent',
           )}
-          title="Задачи"
+          title="Справка"
         >
-          <ListTodo className="h-4 w-4 shrink-0" />
-          <span className="truncate">Задачи</span>
+          <BookOpen className="h-4 w-4 shrink-0" />
+          <span className="truncate">Справка</span>
         </NavLink>
         <button
           type="button"
@@ -117,7 +117,7 @@ export function TasksNav({ collapsed }: { collapsed: boolean }) {
 
       {open && (
         <div className="ml-3 flex flex-col gap-0.5 border-l border-border pl-2">
-          {TASKS_TABS.map((item) => {
+          {HELP_TABS.map((item) => {
             const active = currentTab === item.id;
             return (
               <NavLink

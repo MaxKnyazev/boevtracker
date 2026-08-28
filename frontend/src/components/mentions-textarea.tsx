@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
   type TextareaHTMLAttributes,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -264,13 +265,13 @@ export const MentionsTextarea = forwardRef<HTMLTextAreaElement, Props>(
   },
 );
 
-function MentionHoverCard({
+export function MentionHoverCard({
   user,
   children,
   mentionClassName,
 }: {
   user: MentionUser;
-  children: string;
+  children: ReactNode;
   mentionClassName?: string;
 }) {
   const triggerRef = useRef<HTMLSpanElement | null>(null);

@@ -18,6 +18,8 @@ class Attachment extends Model
         'url',
         'task_id',
         'comment_id',
+        'documentation_product_id',
+        'documentation_chapter_id',
         'created_at',
     ];
 
@@ -33,5 +35,15 @@ class Attachment extends Model
     public function comment(): BelongsTo
     {
         return $this->belongsTo(Comment::class);
+    }
+
+    public function documentationProduct(): BelongsTo
+    {
+        return $this->belongsTo(DocumentationProduct::class, 'documentation_product_id');
+    }
+
+    public function documentationChapter(): BelongsTo
+    {
+        return $this->belongsTo(DocumentationChapter::class, 'documentation_chapter_id');
     }
 }

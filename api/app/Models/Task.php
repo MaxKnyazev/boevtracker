@@ -20,13 +20,20 @@ class Task extends Model
         'active_assignee_id',
         'created_by_id',
         'sort_order',
+        'in_backlog',
         'status_changed_at',
     ];
 
     protected $casts = [
         'deadline' => 'datetime',
         'status_changed_at' => 'datetime',
+        'in_backlog' => 'boolean',
     ];
+
+    public function scopeOnBoard($query)
+    {
+        return $query->where('in_backlog', false);
+    }
 
     public function project(): BelongsTo
     {
