@@ -16,6 +16,7 @@ import {
 } from '@/components/user-avatar';
 import { AssigneeStack } from '@/components/assignee-stack';
 import { CLOSED_STATUS_NAME } from '@/lib/task-buckets';
+import { markdownToPlainText } from '@/lib/markdown';
 import { PRIORITY_LABELS, formatDate, formatDuration, cn } from '@/lib/utils';
 
 const DESC_LIMIT = 90;
@@ -30,8 +31,15 @@ const priorityColor: Record<string, string> = {
 
 function truncate(text?: string | null, limit = DESC_LIMIT): string {
   if (!text?.trim()) return 'Без описания';
-  const t = text.trim().replace(/\s+/g, ' ');
+  const t = markdownToPlainText(text);
+  if (!t) return 'Без описания';
   return t.length > limit ? `${t.slice(0, limit).trimEnd()}...` : t;
+}
+
+function descriptionPreview(text?: string | null): string | undefined {
+  if (!text?.trim()) return undefined;
+  const plain = markdownToPlainText(text);
+  return plain || undefined;
 }
 
 export function TaskCard({
@@ -47,6 +55,7 @@ export function TaskCard({
   onOpen,
   onMoveBoard,
   onMoveProject,
+  onMoveToBacklog,
   onAssign,
 }: {
   task: Task;
@@ -61,6 +70,7 @@ export function TaskCard({
   onOpen?: () => void;
   onMoveBoard?: () => void;
   onMoveProject?: () => void;
+  onMoveToBacklog?: () => void;
   onAssign?: (assigneeIds: number[]) => Promise<void>;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -256,7 +266,7 @@ export function TaskCard({
 
       <div
         className="mb-2 min-w-0 truncate text-xs leading-relaxed text-muted-foreground"
-        title={task.description?.trim() || undefined}
+        title={descriptionPreview(task.description)}
       >
         {truncate(task.description)}
       </div>
@@ -272,7 +282,12 @@ export function TaskCard({
     </div>
   );
 
-  if (!writable || preview || (!onMoveBoard && !onMoveProject)) return card;
+  if (
+    !writable ||
+    preview ||
+    (!onMoveBoard && !onMoveProject && !onMoveToBacklog)
+  )
+    return card;
 
   return (
     <ContextMenu>
@@ -287,6 +302,11 @@ export function TaskCard({
         {onMoveBoard ? (
           <ContextMenuItem onSelect={onMoveBoard}>
             Перенести на другую доску
+          </ContextMenuItem>
+        ) : null}
+        {onMoveToBacklog ? (
+          <ContextMenuItem onSelect={onMoveToBacklog}>
+            Переместить в бэклог
           </ContextMenuItem>
         ) : null}
       </ContextMenuContent>

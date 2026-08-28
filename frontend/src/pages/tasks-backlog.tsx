@@ -1,9 +1,22 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, ListTodo } from 'lucide-react';
-import { api, taskActiveAssignee, type Project, type Task, type User } from '@/lib/api';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Archive,
+  ExternalLink,
+  Undo2,
+} from 'lucide-react';
+import {
+  api,
+  taskActiveAssignee,
+  type Project,
+  type Task,
+  type User,
+} from '@/lib/api';
 import { canWrite, useAuthStore } from '@/store/auth';
-import { EmptyState, PageHeader } from '@/components/layout';
+import { EmptyState } from '@/components/layout';
 import { TaskViewControls } from '@/components/task-view-controls';
 import { TaskModal } from '@/components/task-modal';
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +35,6 @@ import { AssigneeStack } from '@/components/assignee-stack';
 import { PaginationControls } from '@/components/pagination-controls';
 import { usePagination } from '@/hooks/use-pagination';
 import { paginateList, PAGINATION_PAGE_SIZE_KEYS } from '@/lib/pagination';
-import { BacklogPanel } from '@/pages/tasks-backlog';
 
 const priorityColor: Record<string, string> = {
   LOW: 'border-slate-500/40 text-slate-600 dark:text-slate-300',
@@ -31,141 +43,25 @@ const priorityColor: Record<string, string> = {
   CRITICAL: 'border-red-500/40 text-red-700 dark:text-red-300',
 };
 
-type TasksTab = 'list' | 'backlog';
-
-const TAB_STORAGE_KEY = 'boevtracker.tasks.tab';
-
-function readTab(): TasksTab {
-  try {
-    const raw = localStorage.getItem(TAB_STORAGE_KEY);
-    if (raw === 'list' || raw === 'backlog') return raw;
-  } catch {
-    // ignore
-  }
-  return 'list';
-}
-
-export function TasksPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  if (searchParams.get('tab') === 'releases') {
-    return <Navigate to="/releases" replace />;
-  }
-
-  const [tab, setTabState] = useState<TasksTab>(() => {
-    const fromUrl = searchParams.get('tab');
-    if (fromUrl === 'list' || fromUrl === 'backlog') return fromUrl;
-    return readTab();
-  });
-
-  const setTab = useCallback(
-    (next: TasksTab) => {
-      setTabState(next);
-      try {
-        localStorage.setItem(TAB_STORAGE_KEY, next);
-      } catch {
-        // ignore
-      }
-      setSearchParams(
-        (prev) => {
-          const params = new URLSearchParams(prev);
-          params.set('tab', next);
-          return params;
-        },
-        { replace: true },
-      );
-    },
-    [setSearchParams],
-  );
-
-  useEffect(() => {
-    const fromUrl = searchParams.get('tab');
-    if (fromUrl === 'list' || fromUrl === 'backlog') {
-      setTabState((current) => (current === fromUrl ? current : fromUrl));
-      try {
-        localStorage.setItem(TAB_STORAGE_KEY, fromUrl);
-      } catch {
-        // ignore
-      }
-      return;
-    }
-    setSearchParams(
-      (prev) => {
-        const params = new URLSearchParams(prev);
-        if (params.get('tab') === tab) return prev;
-        params.set('tab', tab);
-        return params;
-      },
-      { replace: true },
-    );
-  }, [searchParams, setSearchParams, tab]);
-
-  return (
-    <div>
-      <PageHeader title="Задачи" description="Список задач и бэклог" />
-
-      <div
-        className="mb-4 inline-flex rounded-lg border border-border bg-muted/30 p-1"
-        role="tablist"
-        aria-label="Разделы задач"
-      >
-        <TabButton active={tab === 'list'} onClick={() => setTab('list')}>
-          Список задач
-        </TabButton>
-        <TabButton active={tab === 'backlog'} onClick={() => setTab('backlog')}>
-          Бэклог
-        </TabButton>
-      </div>
-
-      {tab === 'backlog' ? <BacklogPanel /> : <TasksListPanel />}
-    </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      className={cn(
-        'rounded-md px-3 py-1.5 text-sm transition-colors',
-        active
-          ? 'bg-background text-foreground shadow-sm'
-          : 'text-muted-foreground hover:text-foreground',
-      )}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
-function TasksListPanel() {
+export function BacklogPanel() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const writable = canWrite(user?.role);
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [view, setView] = usePersistedTaskView(taskViewStorageKey.tasks);
+  const [view, setView] = usePersistedTaskView(taskViewStorageKey.backlog);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [restoringId, setRestoringId] = useState<number | null>(null);
 
   const load = async () => {
     setLoading(true);
     try {
       const [taskData, assignable] = await Promise.all([
-        api.tasks(),
+        api.backlogTasks(),
         api.assignableUsers(),
       ]);
       setTasks(taskData.tasks);
@@ -182,19 +78,16 @@ function TasksListPanel() {
     void load();
   }, []);
 
-  const boards = useMemo(
-    () => {
-      const map = new Map<number, string>();
-      for (const task of tasks) {
-        const board = task.project?.board;
-        if (board) map.set(board.id, board.name);
-      }
-      return [...map.entries()]
-        .map(([id, name]) => ({ value: String(id), label: name }))
-        .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
-    },
-    [tasks],
-  );
+  const boards = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const task of tasks) {
+      const board = task.project?.board;
+      if (board) map.set(board.id, board.name);
+    }
+    return [...map.entries()]
+      .map(([id, name]) => ({ value: String(id), label: name }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+  }, [tasks]);
 
   const projects = useMemo(() => {
     const map = new Map<number, { id: number; name: string; boardId: number }>();
@@ -226,49 +119,13 @@ function TasksListPanel() {
       .map((name) => ({ value: name, label: name }));
   }, [tasks]);
 
-  useEffect(() => {
-    if (loading) return;
-
-    if (
-      view.board !== 'all' &&
-      !boards.some((b) => b.value === view.board)
-    ) {
-      setView((prev) => ({ ...prev, board: 'all', project: 'all' }));
-      return;
-    }
-
-    if (
-      view.project !== 'all' &&
-      !projects.some((p) => p.value === view.project)
-    ) {
-      setView((prev) => ({ ...prev, project: 'all' }));
-      return;
-    }
-
-    if (
-      view.status !== 'all' &&
-      !statuses.some((s) => s.value === view.status)
-    ) {
-      setView((prev) => ({ ...prev, status: 'all' }));
-    }
-  }, [
-    loading,
-    boards,
-    projects,
-    statuses,
-    view.board,
-    view.project,
-    view.status,
-    setView,
-  ]);
-
   const visibleTasks = useMemo(
     () => applyTaskView(tasks, view),
     [tasks, view],
   );
 
   const { page, setPage, pageSize, setPageSize } = usePagination(
-    PAGINATION_PAGE_SIZE_KEYS.tasks,
+    PAGINATION_PAGE_SIZE_KEYS.backlogTasks,
     [view],
   );
   const taskPage = useMemo(
@@ -283,6 +140,18 @@ function TasksListPanel() {
       setSelectedProject(data.project);
     } catch {
       setSelectedProject(null);
+    }
+  };
+
+  const restoreToBoard = async (task: Task) => {
+    setRestoringId(task.id);
+    try {
+      await api.updateTask(task.id, { inBacklog: false });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось вернуть задачу');
+    } finally {
+      setRestoringId(null);
     }
   };
 
@@ -332,17 +201,17 @@ function TasksListPanel() {
         <p className="text-muted-foreground">Загрузка...</p>
       ) : visibleTasks.length === 0 ? (
         <EmptyState
-          title={tasks.length === 0 ? 'Нет задач' : 'Ничего не найдено'}
+          title={tasks.length === 0 ? 'Бэклог пуст' : 'Ничего не найдено'}
           description={
             tasks.length === 0
-              ? 'Создайте задачу в любом проекте'
+              ? 'Переместите задачу в бэклог через контекстное меню в проекте'
               : 'Измените фильтры или сортировку'
           }
-          icon={<ListTodo className="h-10 w-10" />}
+          icon={<Archive className="h-10 w-10" />}
         />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full min-w-[960px] border-collapse text-sm">
+          <table className="w-full min-w-[1020px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/30 text-left text-xs text-muted-foreground">
                 <th className="w-10 px-2 py-2.5" aria-label="Открыть в проекте" />
@@ -394,12 +263,9 @@ function TasksListPanel() {
                   view={view}
                   onCycle={cycleSort}
                 />
-                <SortableTh
-                  label="В статусе"
-                  field="statusTime"
-                  view={view}
-                  onCycle={cycleSort}
-                />
+                {writable ? (
+                  <th className="px-3 py-2.5 font-medium">Действия</th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -490,9 +356,24 @@ function TasksListPanel() {
                   <td className="px-3 py-2.5 text-muted-foreground">
                     {formatDate(task.deadline)}
                   </td>
-                  <td className="px-3 py-2.5 text-muted-foreground">
-                    {formatDuration(task.statusChangedAt)}
-                  </td>
+                  {writable ? (
+                    <td className="px-3 py-2.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="cursor-pointer"
+                        disabled={restoringId === task.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void restoreToBoard(task);
+                        }}
+                      >
+                        <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+                        Вернуть в проект
+                      </Button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>

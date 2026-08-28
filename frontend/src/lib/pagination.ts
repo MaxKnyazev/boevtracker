@@ -4,6 +4,7 @@ export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 export const PAGINATION_PAGE_SIZE_KEYS = {
   tasks: 'boevtracker.pagination.pageSize.tasks',
+  backlogTasks: 'boevtracker.pagination.pageSize.backlogTasks',
   timeTracking: 'boevtracker.pagination.pageSize.timeTracking',
   notifications: 'boevtracker.pagination.pageSize.notifications',
   usersPending: 'boevtracker.pagination.pageSize.usersPending',

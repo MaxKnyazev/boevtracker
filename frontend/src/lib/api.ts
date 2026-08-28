@@ -34,6 +34,52 @@ export type Attachment = {
   mimeType: string;
   size: number;
   url: string;
+  documentationProductId?: number | null;
+  documentationChapterId?: number | null;
+};
+
+export type DocumentationTocItem = {
+  id: number;
+  title: string;
+  sortOrder: number;
+};
+
+export type DocumentationChapter = {
+  id: number;
+  productId: number;
+  title: string;
+  body?: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  files?: Attachment[];
+};
+
+export type DocumentationProduct = {
+  id: number;
+  name: string;
+  description?: string | null;
+  sortOrder: number;
+  createdById?: number | null;
+  createdBy?: PublicUser | null;
+  chaptersCount: number;
+  toc?: DocumentationTocItem[];
+  chapters?: DocumentationChapter[];
+  files?: Attachment[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type HelpNote = {
+  id: number;
+  title: string;
+  body?: string | null;
+  pinned: boolean;
+  sortOrder: number;
+  createdById?: number | null;
+  createdBy?: PublicUser | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ProjectStatus = {
@@ -99,6 +145,7 @@ export type Task = {
   releaseId?: number | null;
   statusId: number;
   order?: number;
+  inBacklog?: boolean;
   activeAssigneeId?: number | null;
   statusChangedAt: string;
   createdAt: string;
@@ -478,6 +525,7 @@ async function uploadFilesSequential<T>(
   const totalBytes = sizes.reduce((sum, n) => sum + n, 0) || 1;
   let completedBytes = 0;
   let lastResult: T | undefined;
+  const allUploaded: Attachment[] = [];
 
   for (let i = 0; i < files.length; i++) {
     if (signal?.aborted) {
@@ -508,6 +556,11 @@ async function uploadFilesSequential<T>(
       signal,
     );
 
+    const batch = (lastResult as { files?: Attachment[] } | undefined)?.files;
+    if (Array.isArray(batch)) {
+      allUploaded.push(...batch);
+    }
+
     completedBytes += sizes[i]!;
     onProgress?.({
       fileIndex: i,
@@ -519,6 +572,14 @@ async function uploadFilesSequential<T>(
       fileName: file.name,
       filesCount: files.length,
     });
+  }
+
+  if (allUploaded.length > 0 && lastResult && typeof lastResult === 'object') {
+    return {
+      ...(lastResult as object),
+      files: allUploaded,
+      file: allUploaded[0],
+    } as T;
   }
 
   return lastResult as T;
@@ -664,6 +725,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
   tasks: () => request<{ tasks: Task[] }>('/api/tasks'),
+  backlogTasks: () => request<{ tasks: Task[] }>('/api/tasks/backlog'),
   task: (id: number) => request<{ task: Task }>(`/api/tasks/${id}`),
   updateTask: (id: number, data: Record<string, unknown>) =>
     request<{ task: Task; needsActiveChoice?: boolean }>(`/api/tasks/${id}`, {
@@ -733,6 +795,110 @@ export const api = {
   detachReleaseTask: (id: number, taskId: number) =>
     request<{ ok: boolean }>(`/api/releases/${id}/tasks/${taskId}`, {
       method: 'DELETE',
+    }),
+
+  helpProducts: () =>
+    request<{ products: DocumentationProduct[] }>('/api/help/products'),
+  helpProduct: (id: number) =>
+    request<{ product: DocumentationProduct }>(`/api/help/products/${id}`),
+  createHelpProduct: (data: { name: string; description?: string }) =>
+    request<{ product: DocumentationProduct }>('/api/help/products', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateHelpProduct: (
+    id: number,
+    data: { name?: string; description?: string | null },
+  ) =>
+    request<{ product: DocumentationProduct }>(`/api/help/products/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteHelpProduct: (id: number) =>
+    request<{ ok: boolean }>(`/api/help/products/${id}`, { method: 'DELETE' }),
+  reorderHelpProducts: (orderedIds: number[]) =>
+    request<{ products: DocumentationProduct[] }>('/api/help/products/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ orderedIds }),
+    }),
+  createHelpChapter: (
+    productId: number,
+    data: { title: string; body?: string },
+  ) =>
+    request<{ chapter: DocumentationChapter }>(
+      `/api/help/products/${productId}/chapters`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+    ),
+  updateHelpChapter: (
+    id: number,
+    data: { title?: string; body?: string | null },
+  ) =>
+    request<{ chapter: DocumentationChapter }>(`/api/help/chapters/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteHelpChapter: (id: number) =>
+    request<{ ok: boolean }>(`/api/help/chapters/${id}`, { method: 'DELETE' }),
+  reorderHelpChapters: (productId: number, orderedIds: number[]) =>
+    request<{ product: DocumentationProduct }>(
+      `/api/help/products/${productId}/chapters/reorder`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ orderedIds }),
+      },
+    ),
+  uploadHelpProductFiles: (
+    productId: number,
+    files: File[],
+    onProgress?: (event: UploadProgressEvent) => void,
+    signal?: AbortSignal,
+  ) =>
+    uploadFilesSequential<{ file: Attachment; files: Attachment[] }>(
+      `/api/help/products/${productId}/files`,
+      files,
+      onProgress,
+      signal,
+    ),
+  uploadHelpChapterFiles: (
+    chapterId: number,
+    files: File[],
+    onProgress?: (event: UploadProgressEvent) => void,
+    signal?: AbortSignal,
+  ) =>
+    uploadFilesSequential<{ file: Attachment; files: Attachment[] }>(
+      `/api/help/chapters/${chapterId}/files`,
+      files,
+      onProgress,
+      signal,
+    ),
+
+  helpNotes: () => request<{ notes: HelpNote[] }>('/api/help/notes'),
+  createHelpNote: (data: {
+    title: string;
+    body?: string;
+    pinned?: boolean;
+  }) =>
+    request<{ note: HelpNote }>('/api/help/notes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateHelpNote: (
+    id: number,
+    data: { title?: string; body?: string | null; pinned?: boolean },
+  ) =>
+    request<{ note: HelpNote }>(`/api/help/notes/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteHelpNote: (id: number) =>
+    request<{ ok: boolean }>(`/api/help/notes/${id}`, { method: 'DELETE' }),
+  reorderHelpNotes: (orderedIds: number[]) =>
+    request<{ notes: HelpNote[] }>('/api/help/notes/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ orderedIds }),
     }),
 
   addComment: (taskId: number, body: string, replyToId?: number | null) =>

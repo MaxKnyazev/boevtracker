@@ -15,7 +15,7 @@ import {
 } from '@/lib/api';
 import { canWrite, useAuthStore } from '@/store/auth';
 import { useUploadsStore } from '@/store/uploads';
-import { EmptyState } from '@/components/layout';
+import { EmptyState, PageHeader } from '@/components/layout';
 import { TaskModal } from '@/components/task-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -100,7 +100,19 @@ function writeStatusFilter(value: StatusFilter) {
   }
 }
 
-export function ReleasesPanel() {
+export function ReleasesPage() {
+  return (
+    <div>
+      <PageHeader
+        title="Релизы"
+        description="Группируйте задачи по релизам: добавляйте существующие или создавайте новые."
+      />
+      <ReleasesPanel />
+    </div>
+  );
+}
+
+function ReleasesPanel() {
   const user = useAuthStore((s) => s.user);
   const writable = canWrite(user?.role);
 
@@ -247,17 +259,14 @@ export function ReleasesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          Группируйте задачи по релизам: добавляйте существующие или создавайте новые.
-        </p>
-        {writable && (
+      {writable && (
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <Button type="button" onClick={() => setCreateOpen(true)}>
             <Plus className="mr-1.5 h-4 w-4" />
             Создать релиз
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 

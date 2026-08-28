@@ -69,6 +69,12 @@ import {
   MentionText,
   MentionsTextarea,
 } from '@/components/mentions-textarea';
+import {
+  MarkdownContent,
+  markdownAttachmentImage,
+  markdownAttachmentLink,
+} from '@/components/markdown-content';
+import { MarkdownEditor } from '@/components/markdown-editor';
 import { PRIORITY_LABELS, formatDate, formatDuration, cn, MAX_TASK_TITLE_LENGTH } from '@/lib/utils';
 import { CLOSED_STATUS_NAME } from '@/lib/task-buckets';
 import {
@@ -726,6 +732,39 @@ export function TaskModal({
     });
   };
 
+  const insertFilesIntoDescription = async (files: File[]) => {
+    const ok = filterFiles(files);
+    if (!ok.length) return;
+    setSaving(true);
+    try {
+      const res = await api.uploadTaskFiles(taskId, ok);
+      const uploaded = res.files ?? [];
+      if (!uploaded.length) {
+        throw new Error('Не удалось загрузить файл');
+      }
+
+      let next = descriptionDraft;
+      for (const file of uploaded) {
+        const snippet = file.mimeType?.startsWith('image/')
+          ? markdownAttachmentImage(file)
+          : markdownAttachmentLink(file);
+        next = `${next}${next.endsWith('\n') || !next ? '' : '\n'}${snippet}\n`;
+      }
+
+      setDescriptionDraft(next);
+      const saveRes = await api.updateTask(taskId, {
+        description: next.trim() || null,
+      });
+      setTask(saveRes.task);
+      await onChanged();
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить файл');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const addPendingFiles = (incoming: File[]) => {
     const files = filterFiles(incoming);
     if (!files.length) return;
@@ -1283,8 +1322,6 @@ export function TaskModal({
                     )}
                   </Meta>
 
-                  <div className="my-2 border-t border-border/70" />
-
                   <Meta label="Создана" muted>
                     {formatDate(task.createdAt)}
                   </Meta>
@@ -1295,6 +1332,20 @@ export function TaskModal({
                     {displayName(task.createdBy)}
                   </Meta>
                 </div>
+                {writable && task && !task.inBacklog ? (
+                  <div className="shrink-0 px-3 py-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full cursor-pointer"
+                      disabled={saving}
+                      onClick={() => void saveField({ inBacklog: true })}
+                    >
+                      Переместить в бэклог
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             </aside>
 
@@ -1333,11 +1384,15 @@ export function TaskModal({
                 <div className="min-h-[192px]">
                   {writable && editingDescription ? (
                     <div className="flex gap-2">
-                      <MentionsTextarea
+                      <MarkdownEditor
                         value={descriptionDraft}
                         onChange={setDescriptionDraft}
                         users={users}
-                        className="min-h-[192px] flex-1 resize-y"
+                        onInsertFiles={insertFilesIntoDescription}
+                        disabled={saving}
+                        rows={8}
+                        placeholder="Markdown, @упоминания"
+                        className="min-h-[192px] flex-1"
                         autoFocus
                         onKeyDown={(e) => {
                           if (e.key === 'Escape') setEditingDescription(false);
@@ -1374,8 +1429,12 @@ export function TaskModal({
                       </div>
                     </div>
                   ) : task.description?.trim() ? (
-                    <div className="min-h-[192px] min-w-0 overflow-hidden px-1 py-0.5 text-sm leading-relaxed whitespace-pre-wrap break-words text-muted-foreground [overflow-wrap:anywhere]">
-                      <MentionText text={task.description} users={users} />
+                    <div className="min-h-[192px] min-w-0 overflow-hidden px-1 py-0.5">
+                      <MarkdownContent
+                        content={task.description}
+                        users={users}
+                        className="text-muted-foreground"
+                      />
                     </div>
                   ) : writable ? (
                     <button

@@ -7,6 +7,7 @@ import {
   Bell,
   PanelLeftClose,
   PanelLeft,
+  Rocket,
 } from 'lucide-react';
 import { useAuthStore, canManageUsers } from '@/store/auth';
 import { useNotificationsStore } from '@/store/notifications';
@@ -16,6 +17,7 @@ import { UploadProgressDock } from '@/components/upload-progress-dock';
 import { ShiftControls } from '@/components/shift-controls';
 import { BoardsNav } from '@/components/boards-nav';
 import { TasksNav } from '@/components/tasks-nav';
+import { HelpNav } from '@/components/help-nav';
 import { TimeNav } from '@/components/time-nav';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -113,6 +115,11 @@ export function AppLayout() {
         <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
           <BoardsNav collapsed={collapsed} />
           <TasksNav collapsed={collapsed} />
+          <NavLink to="/releases" className={linkClass} title="Релизы">
+            <Rocket className="h-4 w-4 shrink-0" />
+            {!collapsed && 'Релизы'}
+          </NavLink>
+          <HelpNav collapsed={collapsed} />
           <TimeNav collapsed={collapsed} />
           <NavLink to="/notifications" className={linkClass} title="Уведомления">
             <span className="relative shrink-0">

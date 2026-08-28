@@ -438,6 +438,25 @@ class TaskController extends Controller
         }
 
         $tasks = Task::query()
+            ->onBoard()
+            ->with(['assignees', 'activeAssignee', 'status', 'createdBy', 'project.board'])
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (Task $t) => ApiPresenter::task($t))
+            ->values();
+
+        return response()->json(['tasks' => $tasks]);
+    }
+
+    public function backlog(Request $request): JsonResponse
+    {
+        if ($resp = $this->forbidPending($this->user($request))) {
+            return $resp;
+        }
+
+        $tasks = Task::query()
+            ->where('in_backlog', true)
             ->with(['assignees', 'activeAssignee', 'status', 'createdBy', 'project.board'])
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
@@ -593,6 +612,7 @@ class TaskController extends Controller
             'activeAssigneeId' => ['nullable', 'integer'],
             'projectId' => ['sometimes', 'integer'],
             'releaseId' => ['nullable', 'integer'],
+            'inBacklog' => ['sometimes', 'boolean'],
             'closeComment' => ['nullable', 'string', 'max:5000'],
         ], [
             'title.min' => 'Укажите название задачи',
@@ -643,6 +663,10 @@ class TaskController extends Controller
             }
         }
 
+        if (array_key_exists('inBacklog', $data)) {
+            $update['in_backlog'] = (bool) $data['inBacklog'];
+        }
+
         $fromStatusId = (int) $task->status_id;
         $toStatusId = $fromStatusId;
 
@@ -660,6 +684,7 @@ class TaskController extends Controller
             }
             $update['status_id'] = $mapped->id;
             $update['status_changed_at'] = now();
+            $update['in_backlog'] = false;
             $toStatusId = (int) $mapped->id;
         }
 
@@ -674,6 +699,7 @@ class TaskController extends Controller
             if ($status->id !== $task->status_id) {
                 $update['status_id'] = $status->id;
                 $update['status_changed_at'] = now();
+                $update['in_backlog'] = false;
                 $toStatusId = (int) $status->id;
             }
         }
@@ -989,6 +1015,7 @@ class TaskController extends Controller
         }
 
         $siblings = Task::query()
+            ->onBoard()
             ->where('status_id', $status->id)
             ->where('id', '!=', $id)
             ->orderBy('sort_order')
@@ -1019,6 +1046,7 @@ class TaskController extends Controller
             $payload = [
                 'status_id' => $status->id,
                 'sort_order' => $index,
+                'in_backlog' => false,
             ];
             if ($statusChanged) {
                 $payload['status_changed_at'] = now();

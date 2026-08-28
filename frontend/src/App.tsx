@@ -7,6 +7,8 @@ import { BoardsPage } from '@/pages/boards';
 import { BoardDetailPage } from '@/pages/board-detail';
 import { ProjectPage } from '@/pages/project';
 import { TasksPage } from '@/pages/tasks';
+import { ReleasesPage } from '@/pages/releases';
+import { HelpPage } from '@/pages/help';
 import { TimeTrackingPage } from '@/pages/time-tracking';
 import { UsersPage } from '@/pages/users';
 import { NotificationsPage } from '@/pages/notifications';
@@ -95,6 +97,8 @@ export default function App() {
       >
         <Route index element={<BoardsPage />} />
         <Route path="tasks" element={<TasksPage />} />
+        <Route path="releases" element={<ReleasesPage />} />
+        <Route path="help" element={<HelpPage />} />
         <Route path="time" element={<TimeTrackingPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="profile" element={<ProfilePage />} />

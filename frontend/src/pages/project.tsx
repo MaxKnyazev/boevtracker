@@ -869,6 +869,10 @@ export function ProjectPage({
                                 onOpen={() => setSelectedTaskId(task.id)}
                                 onMoveBoard={() => setMoveTask(task)}
                                 onMoveProject={() => setMoveProjectTask(task)}
+                                onMoveToBacklog={async () => {
+                                  await api.updateTask(task.id, { inBacklog: true });
+                                  await load();
+                                }}
                                 onAssign={async (assigneeIds) => {
                                   const res = await api.updateTask(task.id, {
                                     assigneeIds,
@@ -1389,6 +1393,7 @@ function SortableTask({
   onOpen,
   onMoveBoard,
   onMoveProject,
+  onMoveToBacklog,
   onAssign,
 }: {
   id: string;
@@ -1398,6 +1403,7 @@ function SortableTask({
   onOpen: () => void;
   onMoveBoard: () => void;
   onMoveProject: () => void;
+  onMoveToBacklog: () => void | Promise<void>;
   onAssign: (assigneeIds: number[]) => Promise<void>;
 }) {
   const {
@@ -1431,6 +1437,7 @@ function SortableTask({
       onOpen={onOpen}
       onMoveBoard={onMoveBoard}
       onMoveProject={onMoveProject}
+      onMoveToBacklog={onMoveToBacklog}
       onAssign={onAssign}
     />
   );
