@@ -52,6 +52,11 @@ class User extends Model
         return $this->hasMany(Project::class, 'created_by_id');
     }
 
+    public function vaultItems(): HasMany
+    {
+        return $this->hasMany(Credential::class, 'owner_user_id');
+    }
+
     public function canWrite(): bool
     {
         return in_array($this->role, ['ADMIN', 'DEVELOPER'], true);
