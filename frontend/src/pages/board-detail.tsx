@@ -24,6 +24,11 @@ import {
   usePersistedTaskView,
   type TaskViewState,
 } from '@/lib/task-view';
+import {
+  mergeProjectOrder,
+  readProjectOrder,
+  writeProjectOrder,
+} from '@/lib/project-order';
 import type { TaskBucketCounts } from '@/lib/task-buckets';
 
 const OVERVIEW_TAB = 'overview';
@@ -91,10 +96,12 @@ export function BoardDetailPage() {
       ]);
       setBoard(data.board);
       setUsers(assignable.users);
-      const ordered = [...(data.board.projects || [])]
+      const fallbackIds = [...(data.board.projects || [])]
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id - b.id)
         .map((p) => p.id);
+      const ordered = mergeProjectOrder(readProjectOrder(boardId), fallbackIds);
       setProjectOrder(ordered);
+      writeProjectOrder(boardId, ordered);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка');
@@ -259,8 +266,7 @@ export function BoardDetailPage() {
     }
   };
 
-  const moveProject = async (projectId: number, direction: 'up' | 'down') => {
-    if (!writable) return;
+  const moveProject = (projectId: number, direction: 'up' | 'down') => {
     const visibleIds = overviewProjects.map((p) => p.id);
     const visibleIndex = visibleIds.indexOf(projectId);
     if (visibleIndex < 0) return;
@@ -277,13 +283,7 @@ export function BoardDetailPage() {
     const next = [...projectOrder];
     [next[indexA], next[indexB]] = [next[indexB], next[indexA]];
     setProjectOrder(next);
-
-    try {
-      await api.reorderProjects(Number(boardId), next);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сортировки');
-      await load();
-    }
+    writeProjectOrder(boardId, next);
   };
 
   if (!board && !error) {
@@ -423,8 +423,8 @@ export function BoardDetailPage() {
                   filterUsers={users}
                   onOpenTab={() => setTab(String(project.id))}
                   onOpenSettings={() => openSettings(project)}
-                  onMoveUp={() => void moveProject(project.id, 'up')}
-                  onMoveDown={() => void moveProject(project.id, 'down')}
+                  onMoveUp={() => moveProject(project.id, 'up')}
+                  onMoveDown={() => moveProject(project.id, 'down')}
                   onTasksChanged={patchProjectCounts}
                 />
               ))}
@@ -650,7 +650,7 @@ function ProjectBlock({
             >
               {project.name}
             </button>
-            {writable && canMoveUp && (
+            {canMoveUp && (
               <Button
                 type="button"
                 variant="outline"
@@ -662,7 +662,7 @@ function ProjectBlock({
                 <ArrowUp className="h-4 w-4" />
               </Button>
             )}
-            {writable && canMoveDown && (
+            {canMoveDown && (
               <Button
                 type="button"
                 variant="outline"

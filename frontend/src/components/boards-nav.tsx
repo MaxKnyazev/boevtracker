@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation, useParams } from 'react-router-dom';
 import { ChevronDown, FolderKanban, LayoutDashboard } from 'lucide-react';
 import { api, type Board } from '@/lib/api';
+import {
+  PROJECT_ORDER_EVENT,
+  sortProjectsByPersonalOrder,
+} from '@/lib/project-order';
 import { cn } from '@/lib/utils';
 
 const BOARDS_EXPANDED_KEY = 'boevtracker.sidebar.boardsExpanded';
@@ -60,6 +64,7 @@ export function BoardsNav({
   const [expandedBoardIds, setExpandedBoardIds] = useState<Set<number>>(
     readExpandedBoardIds,
   );
+  const [orderVersion, setOrderVersion] = useState(0);
 
   const loadBoards = useCallback(async () => {
     setLoading(true);
@@ -76,6 +81,12 @@ export function BoardsNav({
   useEffect(() => {
     void loadBoards();
   }, [loadBoards]);
+
+  useEffect(() => {
+    const onOrder = () => setOrderVersion((v) => v + 1);
+    window.addEventListener(PROJECT_ORDER_EVENT, onOrder);
+    return () => window.removeEventListener(PROJECT_ORDER_EVENT, onOrder);
+  }, []);
 
   // Refresh list when returning to the boards index (e.g. after create).
   useEffect(() => {
@@ -193,14 +204,15 @@ export function BoardsNav({
           ) : (
             boards.map((board) => {
               const boardOpen = expandedBoardIds.has(board.id);
-              const projects = [...(board.projects ?? [])].sort(
-                (a, b) => (a.order ?? 0) - (b.order ?? 0),
+              const projects = sortProjectsByPersonalOrder(
+                board.projects ?? [],
+                board.id,
               );
               const boardActive =
                 routeBoardId === board.id && activeProjectId == null;
 
               return (
-                <div key={board.id} className="flex flex-col gap-0.5">
+                <div key={`${board.id}-${orderVersion}`} className="flex flex-col gap-0.5">
                   <div
                     className={cn(
                       'flex items-center rounded-lg text-sm transition-colors',
