@@ -22,14 +22,20 @@ class ShiftController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        if ($resp = $this->forbidPending($this->user($request))) {
+        $user = $this->user($request);
+        if ($resp = $this->forbidPending($user)) {
             return $resp;
         }
 
-        $shifts = WorkShift::query()
+        $query = WorkShift::query()
             ->with(['user', 'pauses'])
-            ->latest('started_at')
-            ->get();
+            ->latest('started_at');
+
+        if ($user->role !== 'ADMIN') {
+            $query->where('user_id', $user->id);
+        }
+
+        $shifts = $query->get();
 
         return response()->json([
             'shifts' => $shifts->map(fn (WorkShift $shift) => ApiPresenter::workShift($shift))->values(),
@@ -38,13 +44,18 @@ class ShiftController extends Controller
 
     public function stats(Request $request, int $id): JsonResponse
     {
-        if ($resp = $this->forbidPending($this->user($request))) {
+        $user = $this->user($request);
+        if ($resp = $this->forbidPending($user)) {
             return $resp;
         }
 
         $shift = WorkShift::query()->with(['user', 'pauses'])->find($id);
         if (! $shift) {
             return response()->json(['error' => 'Смена не найдена'], 404);
+        }
+
+        if ($user->role !== 'ADMIN' && (int) $shift->user_id !== (int) $user->id) {
+            return response()->json(['error' => 'Нет доступа'], 403);
         }
 
         return response()->json($this->shiftStats->build($shift));

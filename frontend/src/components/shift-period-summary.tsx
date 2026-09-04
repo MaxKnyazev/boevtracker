@@ -120,11 +120,13 @@ export function ShiftPeriodSummary({
   users,
   selectedUser,
   selectedUserKey,
+  showUserFilter = true,
 }: {
   shifts: WorkShift[];
   users: PublicUser[];
   selectedUser?: string;
   selectedUserKey?: number;
+  showUserFilter?: boolean;
 }) {
   const [period, setPeriod] = useState<SummaryPeriodState>(() => ({
     ...defaultSummaryPeriod(),
@@ -143,6 +145,13 @@ export function ShiftPeriodSummary({
       current.user === selectedUser ? current : { ...current, user: selectedUser },
     );
   }, [selectedUser, selectedUserKey]);
+
+  useEffect(() => {
+    if (showUserFilter) return;
+    setPeriod((current) =>
+      current.user === 'all' ? current : { ...current, user: 'all' },
+    );
+  }, [showUserFilter]);
 
   const range = useMemo(() => resolveSummaryRange(period), [period]);
   const selectedRange = useMemo(
@@ -335,22 +344,24 @@ export function ShiftPeriodSummary({
             </div>
           )}
 
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="shrink-0">Сотрудник</span>
-            <AppSelect
-              value={period.user}
-              onValueChange={(v) => patch({ user: v })}
-              options={[
-                { value: 'all', label: 'Все' },
-                ...users.map((u) => ({
-                  value: String(u.id),
-                  label: displayName(u),
-                  leading: <UserAvatar user={u} size="sm" />,
-                })),
-              ]}
-              className="w-[13rem] text-xs"
-            />
-          </label>
+          {showUserFilter ? (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="shrink-0">Сотрудник</span>
+              <AppSelect
+                value={period.user}
+                onValueChange={(v) => patch({ user: v })}
+                options={[
+                  { value: 'all', label: 'Все' },
+                  ...users.map((u) => ({
+                    value: String(u.id),
+                    label: displayName(u),
+                    leading: <UserAvatar user={u} size="sm" />,
+                  })),
+                ]}
+                className="w-[13rem] text-xs"
+              />
+            </label>
+          ) : null}
 
           <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
             <input

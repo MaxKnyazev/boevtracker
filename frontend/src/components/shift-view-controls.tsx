@@ -30,11 +30,13 @@ export function ShiftViewControls({
   onChange,
   users,
   className,
+  showUserFilter = true,
 }: {
   view: ShiftViewState;
   onChange: (next: ShiftViewState) => void;
   users: PublicUser[];
   className?: string;
+  showUserFilter?: boolean;
 }) {
   const active = hasActiveShiftView(view);
 
@@ -56,22 +58,24 @@ export function ShiftViewControls({
         </span>
 
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="shrink-0">Сотрудник</span>
-            <AppSelect
-              value={view.user}
-              onValueChange={(v) => patch({ user: v })}
-              options={[
-                { value: 'all', label: 'Все' },
-                ...users.map((u) => ({
-                  value: String(u.id),
-                  label: displayName(u),
-                  leading: <UserAvatar user={u} size="sm" />,
-                })),
-              ]}
-              className="w-[13rem] text-xs"
-            />
-          </label>
+          {showUserFilter ? (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="shrink-0">Сотрудник</span>
+              <AppSelect
+                value={view.user}
+                onValueChange={(v) => patch({ user: v })}
+                options={[
+                  { value: 'all', label: 'Все' },
+                  ...users.map((u) => ({
+                    value: String(u.id),
+                    label: displayName(u),
+                    leading: <UserAvatar user={u} size="sm" />,
+                  })),
+                ]}
+                className="w-[13rem] text-xs"
+              />
+            </label>
+          ) : null}
 
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="shrink-0">Статус</span>

@@ -16,6 +16,7 @@ import { ShiftPeriodSummary } from '@/components/shift-period-summary';
 import { Badge } from '@/components/ui/badge';
 import { UserAvatar, displayName } from '@/components/user-avatar';
 import { realtimeClient } from '@/lib/realtime';
+import { canViewAllTimeTracking, useAuthStore } from '@/store/auth';
 import { useShiftStore } from '@/store/shifts';
 import { cn, formatDateTime, formatSeconds } from '@/lib/utils';
 import {
@@ -60,6 +61,8 @@ function readTab(): TimeTab {
 
 export function TimeTrackingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const authUser = useAuthStore((s) => s.user);
+  const canViewAll = canViewAllTimeTracking(authUser?.role);
   const [tab, setTabState] = useState<TimeTab>(() => {
     const fromUrl = searchParams.get('tab');
     if (fromUrl === 'list' || fromUrl === 'summary') return fromUrl;
@@ -187,10 +190,14 @@ export function TimeTrackingPage() {
 
   useEffect(() => {
     if (loading) return;
+    if (!canViewAll && view.user !== 'all') {
+      setView((prev) => ({ ...prev, user: 'all' }));
+      return;
+    }
     if (view.user !== 'all' && !users.some((u) => String(u.id) === view.user)) {
       setView((prev) => ({ ...prev, user: 'all' }));
     }
-  }, [loading, users, view.user, setView]);
+  }, [loading, canViewAll, users, view.user, setView]);
 
   const visibleShifts = useMemo(
     () => applyShiftView(shifts, view),
@@ -265,6 +272,7 @@ export function TimeTrackingPage() {
             view={view}
             onChange={setView}
             users={users}
+            showUserFilter={canViewAll}
             className="mb-4"
           />
 
@@ -421,8 +429,9 @@ export function TimeTrackingPage() {
         <ShiftPeriodSummary
           shifts={shifts}
           users={users}
-          selectedUser={summaryFocusUser}
+          selectedUser={canViewAll ? summaryFocusUser : undefined}
           selectedUserKey={summaryFocusKey}
+          showUserFilter={canViewAll}
         />
       )}
 
