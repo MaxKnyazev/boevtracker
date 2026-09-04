@@ -13,6 +13,7 @@ import { TimeTrackingPage } from '@/pages/time-tracking';
 import { UsersPage } from '@/pages/users';
 import { NotificationsPage } from '@/pages/notifications';
 import { ProfilePage } from '@/pages/profile';
+import { VaultPage } from '@/pages/vault';
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { user, initialized, fetchMe } = useAuthStore();
@@ -100,6 +101,7 @@ export default function App() {
         <Route path="releases" element={<ReleasesPage />} />
         <Route path="help" element={<HelpPage />} />
         <Route path="time" element={<TimeTrackingPage />} />
+        <Route path="vault" element={<VaultPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="boards/:boardId" element={<BoardDetailPage />} />

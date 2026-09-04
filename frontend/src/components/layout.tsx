@@ -8,6 +8,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   Rocket,
+  KeyRound,
 } from 'lucide-react';
 import { useAuthStore, canManageUsers } from '@/store/auth';
 import { useNotificationsStore } from '@/store/notifications';
@@ -121,6 +122,10 @@ export function AppLayout() {
           </NavLink>
           <HelpNav collapsed={collapsed} />
           <TimeNav collapsed={collapsed} />
+          <NavLink to="/vault" className={linkClass} title="Пароли">
+            <KeyRound className="h-4 w-4 shrink-0" />
+            {!collapsed && 'Пароли'}
+          </NavLink>
           <NavLink to="/notifications" className={linkClass} title="Уведомления">
             <span className="relative shrink-0">
               <Bell className="h-4 w-4" />
