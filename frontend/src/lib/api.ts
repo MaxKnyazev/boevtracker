@@ -2,6 +2,39 @@
 const API_URL = String(import.meta.env.VITE_API_URL ?? '').trim();
 
 export type Role = 'ADMIN' | 'DEVELOPER' | 'READER' | 'PENDING';
+export type VaultKind = 'personal' | 'base';
+
+export type VaultCredential = {
+  id: number;
+  service: string;
+  url?: string | null;
+  role: string;
+  level?: string | null;
+  login: string;
+  password: string;
+  kind: VaultKind;
+  source: VaultKind;
+  ownerId?: number | null;
+  baseRoles: Role[];
+};
+
+export type VaultService = {
+  id: number;
+  name: string;
+  url?: string | null;
+};
+
+export type VaultCredentialInput = {
+  service: string;
+  url?: string | null;
+  role?: string;
+  level?: string | null;
+  login: string;
+  password?: string;
+  kind?: VaultKind;
+  baseRoles?: Role[];
+};
+
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export type User = {
@@ -653,6 +686,30 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ role }),
     }),
+
+  vaultCredentials: () =>
+    request<{ credentials: VaultCredential[] }>('/api/credentials'),
+  vaultBaseCredentials: () =>
+    request<{ credentials: VaultCredential[] }>('/api/credentials/base'),
+  vaultServices: () => request<{ services: VaultService[] }>('/api/credentials/services'),
+  vaultByService: (service: string) =>
+    request<{ service: VaultService; credentials: VaultCredential[] }>(
+      `/api/credentials/service/${encodeURIComponent(service)}`,
+    ),
+  vaultCredential: (id: number) =>
+    request<{ credential: VaultCredential }>(`/api/credentials/${id}`),
+  createVaultCredential: (body: VaultCredentialInput) =>
+    request<{ credential: VaultCredential }>('/api/credentials', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateVaultCredential: (id: number, body: VaultCredentialInput) =>
+    request<{ credential: VaultCredential }>(`/api/credentials/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deleteVaultCredential: (id: number) =>
+    request<{ ok: boolean }>(`/api/credentials/${id}`, { method: 'DELETE' }),
 
   boards: () => request<{ boards: Board[] }>('/api/boards'),
   board: (id: number) => request<{ board: Board }>(`/api/boards/${id}`),
