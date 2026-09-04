@@ -39,4 +39,7 @@ class Constants
 
     public const COOKIE_NAME = 'bt_token';
     public const REFRESH_COOKIE_NAME = 'bt_refresh_token';
+
+    /** Tracker roles that can be attached to a shared (base) vault item. */
+    public const VAULT_BASE_ROLES = ['ADMIN', 'DEVELOPER', 'READER'];
 }

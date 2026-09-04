@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BoardController;
 use App\Http\Controllers\BroadcastAuthController;
+use App\Http\Controllers\CredentialController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
@@ -127,4 +128,13 @@ Route::middleware(AuthenticateJwt::class)->group(function () {
     Route::post('/comments/{id}/files', [TaskController::class, 'uploadCommentFiles'])->whereNumber('id');
     Route::get('/attachments/{id}', [TaskController::class, 'downloadAttachment'])->whereNumber('id');
     Route::delete('/attachments/{id}', [TaskController::class, 'deleteAttachment'])->whereNumber('id');
+    Route::get('/credentials', [CredentialController::class, 'index']);
+    Route::post('/credentials', [CredentialController::class, 'store']);
+    Route::get('/credentials/services', [CredentialController::class, 'services']);
+    Route::get('/credentials/base', [CredentialController::class, 'baseIndex']);
+    Route::get('/credentials/service/{service}', [CredentialController::class, 'byService'])
+        ->where('service', '[^/]+');
+    Route::get('/credentials/{id}', [CredentialController::class, 'show'])->whereNumber('id');
+    Route::patch('/credentials/{id}', [CredentialController::class, 'update'])->whereNumber('id');
+    Route::delete('/credentials/{id}', [CredentialController::class, 'destroy'])->whereNumber('id');
 });
