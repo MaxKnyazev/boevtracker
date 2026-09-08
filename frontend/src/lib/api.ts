@@ -125,6 +125,7 @@ export type ProjectStatus = {
 
 export type TaskChangeHistoryType =
   | 'status'
+  | 'created'
   | 'deadline_set'
   | 'deadline_changed'
   | 'description_changed'

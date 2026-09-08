@@ -360,10 +360,17 @@ class TaskController extends Controller
             'created_at' => now(),
         ]);
 
-        $this->recordTaskChange($task, $user, TaskChangeHistory::TYPE_STATUS, [
-            'fromStatusName' => $from?->name,
-            'toStatusName' => $to->name,
-        ]);
+        $this->recordTaskChange(
+            $task,
+            $user,
+            $from === null
+                ? TaskChangeHistory::TYPE_CREATED
+                : TaskChangeHistory::TYPE_STATUS,
+            [
+                'fromStatusName' => $from?->name,
+                'toStatusName' => $to->name,
+            ],
+        );
 
         if ($fromStatusId !== null) {
             $fromLabel = $from?->name ?: '—';

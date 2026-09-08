@@ -393,7 +393,11 @@ class ApiPresenter
         }
 
         if ($task->relationLoaded('comments') && ! $withComments) {
-            $data['_count'] = ['comments' => $task->comments->count()];
+            $data['_count'] = [
+                'comments' => $task->comments
+                    ->filter(fn (Comment $c) => ($c->kind ?: 'user') !== 'status_change')
+                    ->count(),
+            ];
         } elseif (isset($task->comments_count)) {
             $data['_count'] = ['comments' => (int) $task->comments_count];
         }
@@ -494,7 +498,11 @@ class ApiPresenter
                 $row['_count'] = [
                     'comments' => isset($t->comments_count)
                         ? (int) $t->comments_count
-                        : ($t->relationLoaded('comments') ? $t->comments->count() : 0),
+                        : ($t->relationLoaded('comments')
+                            ? $t->comments
+                                ->filter(fn (Comment $c) => ($c->kind ?: 'user') !== 'status_change')
+                                ->count()
+                            : 0),
                 ];
 
                 return $row;

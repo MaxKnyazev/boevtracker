@@ -120,7 +120,11 @@ class ProjectController extends Controller
                 'tasks' => fn ($q) => $q
                     ->onBoard()
                     ->with(['assignees', 'activeAssignee', 'status', 'files'])
-                    ->withCount('comments'),
+                    ->withCount([
+                        'comments' => fn ($q) => $q->where(function ($q) {
+                            $q->whereNull('kind')->orWhere('kind', '!=', 'status_change');
+                        }),
+                    ]),
             ])
             ->find($id);
 

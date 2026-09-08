@@ -9,6 +9,8 @@ class TaskChangeHistory extends Model
 {
     public const TYPE_STATUS = 'status';
 
+    public const TYPE_CREATED = 'created';
+
     public const TYPE_DEADLINE_SET = 'deadline_set';
 
     public const TYPE_DEADLINE_CHANGED = 'deadline_changed';

@@ -130,19 +130,17 @@ function renderChangeHistoryText(entry: TaskChangeHistory) {
   const payload = entry.payload ?? {};
 
   switch (entry.type) {
+    case 'created':
+      return <>{who} создал задачу</>;
     case 'status':
-      if (payload.fromStatusName) {
-        return (
-          <>
-            {who} перевёл из{' '}
-            <span className="font-medium">«{payload.fromStatusName}»</span> в{' '}
-            <span className="font-medium">«{payload.toStatusName}»</span>
-          </>
-        );
+      // Старые записи создания писались как status без fromStatusName
+      if (!payload.fromStatusName) {
+        return <>{who} создал задачу</>;
       }
       return (
         <>
-          {who} установил статус{' '}
+          {who} перевёл из{' '}
+          <span className="font-medium">«{payload.fromStatusName}»</span> в{' '}
           <span className="font-medium">«{payload.toStatusName}»</span>
         </>
       );
@@ -931,6 +929,9 @@ export function TaskModal({
   }
 
   const comments = task.comments || [];
+  const userCommentCount = comments.filter(
+    (c) => c.kind !== 'status_change',
+  ).length;
   const isFileUploadActive = uploadingFiles || commentFileUploads.length > 0;
   const minimizedProgress = isFileUploadActive ? (overallUploadPercent ?? 0) : null;
 
@@ -1559,7 +1560,7 @@ export function TaskModal({
                 <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
                   <h3 className="text-sm font-medium">Комментарии</h3>
                   <span className="text-xs text-muted-foreground">
-                    {comments.length}
+                    {userCommentCount}
                   </span>
                 </div>
 
