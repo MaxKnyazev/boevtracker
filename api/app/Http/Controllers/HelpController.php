@@ -491,7 +491,7 @@ class HelpController extends Controller
         $created = [];
         foreach ($files as $file) {
             if ($file->getSize() > Constants::MAX_FILE_SIZE) {
-                return response()->json(['error' => 'Файл больше 500 МБ'], 400);
+                return response()->json(['error' => 'Файл больше 10 ГБ'], 400);
             }
 
             $stored = $this->files->store($file);

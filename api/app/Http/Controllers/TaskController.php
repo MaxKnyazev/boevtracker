@@ -1478,7 +1478,7 @@ class TaskController extends Controller
         foreach ($list as $file) {
             if ($file->getSize() > $this->files->maxBytes()) {
                 return response()->json([
-                    'error' => 'Файл «'.$file->getClientOriginalName().'» больше 500 МБ',
+                    'error' => 'Файл «'.$file->getClientOriginalName().'» больше 10 ГБ',
                 ], 400);
             }
             $stored = $this->files->store($file);

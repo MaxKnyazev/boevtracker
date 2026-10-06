@@ -16,15 +16,18 @@ class FileStorage
         $ext = $file->getClientOriginalExtension();
         $filename = Str::uuid()->toString().($ext !== '' ? '.'.$ext : '');
         $key = 'uploads/'.$filename;
+        $size = $file->getSize() ?: 0;
+        $mime = $file->getMimeType() ?: 'application/octet-stream';
 
-        Storage::disk('local')->putFileAs('uploads', $file, $filename);
+        // Move PHP's temporary upload instead of streaming another full copy.
+        $file->move(Storage::disk('local')->path('uploads'), $filename);
 
         return [
             'filename' => $filename,
             'key' => $key,
             'url' => '/api/attachments/pending',
-            'size' => $file->getSize() ?: 0,
-            'mime' => $file->getMimeType() ?: 'application/octet-stream',
+            'size' => $size,
+            'mime' => $mime,
             'originalName' => $originalName,
         ];
     }

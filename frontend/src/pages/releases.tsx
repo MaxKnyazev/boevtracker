@@ -1094,7 +1094,7 @@ function CreateReleaseTaskDialog({
     const ok: File[] = [];
     for (const file of incoming) {
       if (file.size > MAX_UPLOAD_FILE_SIZE) {
-        setError(`Файл «${file.name}» больше 500 МБ`);
+        setError(`Файл «${file.name}» больше 10 ГБ`);
         continue;
       }
       ok.push(file);
@@ -1267,7 +1267,7 @@ function CreateReleaseTaskDialog({
                 буфера
               </div>
               <div className="text-[11px] text-muted-foreground">
-                Можно несколько файлов, до 500 МБ каждый · Ctrl+V
+                Можно несколько файлов, до 10 ГБ каждый · Ctrl+V
               </div>
             </FileDropZone>
             {files.length > 0 && (

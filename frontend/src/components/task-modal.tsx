@@ -677,7 +677,7 @@ export function TaskModal({
           (f) => f.size > MAX_UPLOAD_FILE_SIZE,
         );
         if (oversized) {
-          setError(`Файл «${oversized.name}» больше 500 МБ`);
+          setError(`Файл «${oversized.name}» больше 10 ГБ`);
           await load();
           await onChanged();
         } else {
@@ -708,7 +708,7 @@ export function TaskModal({
     const ok: File[] = [];
     for (const file of files) {
       if (file.size > MAX_UPLOAD_FILE_SIZE) {
-        setError(`Файл «${file.name}» больше 500 МБ`);
+        setError(`Файл «${file.name}» больше 10 ГБ`);
         continue;
       }
       ok.push(file);
@@ -1477,7 +1477,7 @@ export function TaskModal({
                         : 'Перетащите файлы сюда, нажмите или вставьте из буфера'}
                     </div>
                     <div className="text-[11px] text-muted-foreground">
-                      Можно несколько файлов, до 500 МБ каждый · Ctrl+V
+                      Можно несколько файлов, до 10 ГБ каждый · Ctrl+V
                     </div>
                     {uploadingFiles && (
                       <>

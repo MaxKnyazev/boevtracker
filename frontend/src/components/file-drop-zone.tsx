@@ -94,7 +94,7 @@ export function PendingFileChip({
   );
 }
 
-export const MAX_UPLOAD_FILE_SIZE = 500 * 1024 * 1024;
+export const MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024 * 1024;
 function extensionFromMime(type: string): string {
   if (type === 'image/png') return 'png';
   if (type === 'image/jpeg') return 'jpg';
